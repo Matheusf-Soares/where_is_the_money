@@ -33,6 +33,12 @@ frescor_dias_padrao = 5
 recorrencia_meses_minimos = 2
 recorrencia_variacao_maxima = 0.15
 
+# Fase 2: rótulo de quem não casou com nenhuma regra nem com o de-para.
+# É rótulo, e não vazio, de propósito: categoria nula some de GROUP BY e o gasto
+# desaparece do relatório sem ninguém notar.
+categoria_padrao = "Sem categoria"
+grupo_padrao = "Sem grupo"
+
 
 # ---------------------------------------------------------------------------
 # Armadilha 1: pagamento de fatura de cartão
@@ -153,3 +159,136 @@ valor = "%<cpf ou nome de conta própria conhecida>%"
 instituicao = "rico%"
 dias_maximos = 10
 observacao = "Contexto Investments atualiza com menos frequência que conta corrente."
+
+
+# ---------------------------------------------------------------------------
+# FASE 2: categorização própria
+#
+# A categoria da Pluggy é grosseira ("Shopping" não diz nada) e não dá para
+# editar. A resolução acontece em três camadas, e a primeira que casar vence:
+#
+#   1. [[categoria]]        regra por texto — precisa, mas deixa buraco
+#   2. [[mapa_categoria]]   de-para do categoryId — grosseiro, mas cobre tudo
+#   3. categoria_padrao     o que sobrou, com rótulo explícito
+#
+# Sozinha, a camada 1 deixa o resto virar um "outros" que cresce em silêncio.
+# Sozinha, a 2 não distingue o que você mais quer distinguir.
+# ---------------------------------------------------------------------------
+
+# --- Camada 1: regra por texto -------------------------------------------
+#
+# `padrao` casa contra a descrição OU o nome do estabelecimento, porque a Pluggy
+# preenche um ou outro conforme a instituição.
+#
+# `prioridade` é obrigatória e ÚNICA no arquivo. Menor vence. A unicidade é o
+# que impede que duas regras casando a mesma transação sejam desempatadas pela
+# ordem das linhas — resultado que mudaria sozinho ao reordenar o arquivo.
+# Deixe espaço entre os números (10, 20, 30) para conseguir inserir depois.
+#
+# `instituicao` é opcional e vale "%" quando ausente.
+#
+# `categoria` e `grupo` são rótulos de SAÍDA: aparecem no relatório como
+# escritos aqui, então maiúscula é bem-vinda. Só `padrao` e `instituicao`
+# precisam estar em minúsculas.
+
+[[categoria]]
+prioridade = 10
+padrao = "%netflix%"
+categoria = "Streaming"
+grupo = "Lazer"
+
+[[categoria]]
+prioridade = 20
+padrao = "%spotify%"
+categoria = "Streaming"
+grupo = "Lazer"
+
+[[categoria]]
+prioridade = 30
+padrao = "%uber%"
+categoria = "Transporte"
+grupo = "Variável"
+
+[[categoria]]
+prioridade = 40
+padrao = "%ifood%"
+categoria = "Delivery"
+grupo = "Variável"
+observacao = "Separado de Mercado de propósito: um dá para cortar, o outro não."
+
+[[categoria]]
+prioridade = 50
+padrao = "%academia%"
+categoria = "Academia"
+grupo = "Fixo"
+
+# O grupo é o que responde "quanto do meu gasto dá para cortar", que categoria
+# nenhuma responde sozinha. Sugestão de conjunto pequeno e estável:
+#
+#   Fixo      aluguel, condomínio, luz, plano de saúde, academia
+#   Essencial mercado, farmácia, transporte para o trabalho
+#   Variável  delivery, bar, compras
+#   Lazer     streaming, viagem, cinema
+#
+# Poucos grupos e bem definidos valem mais que muitos: grupo que você hesita em
+# atribuir é grupo que vai ficar inconsistente ao longo dos meses.
+
+
+# --- Camada 2: de-para do categoryId da Pluggy ---------------------------
+#
+# Rede de segurança: pega o que nenhuma regra de texto pegou. Casa por
+# IGUALDADE no categoryId, não por LIKE — e por isso cada id só pode aparecer
+# uma vez aqui.
+#
+# Os ids são hierárquicos: 05070000 é Streaming dentro do grupo 05. Descubra os
+# seus com:
+#
+#     SELECT DISTINCT id_categoria, categoria, count(*)
+#     FROM stg_transacoes GROUP BY 1, 2 ORDER BY 3 DESC;
+#
+# Comece pelos mais frequentes: uma dúzia de linhas costuma cobrir quase tudo.
+
+[[mapa_categoria]]
+id_categoria = "05070000"
+categoria = "Streaming"
+grupo = "Lazer"
+
+[[mapa_categoria]]
+id_categoria = "05010000"
+categoria = "Mercado"
+grupo = "Essencial"
+
+[[mapa_categoria]]
+id_categoria = "05020000"
+categoria = "Restaurante"
+grupo = "Variável"
+
+[[mapa_categoria]]
+id_categoria = "05030000"
+categoria = "Delivery"
+grupo = "Variável"
+
+[[mapa_categoria]]
+id_categoria = "05050000"
+categoria = "Saúde"
+grupo = "Essencial"
+
+[[mapa_categoria]]
+id_categoria = "05060000"
+categoria = "Academia"
+grupo = "Fixo"
+
+[[mapa_categoria]]
+id_categoria = "05090000"
+categoria = "Compras"
+grupo = "Variável"
+
+[[mapa_categoria]]
+id_categoria = "04000000"
+categoria = "Transporte"
+grupo = "Essencial"
+
+[[mapa_categoria]]
+id_categoria = "04030000"
+categoria = "Combustível"
+grupo = "Essencial"

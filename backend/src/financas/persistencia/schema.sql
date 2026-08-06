@@ -170,3 +170,42 @@ CREATE TABLE IF NOT EXISTS cfg_geral (
     valor                 VARCHAR       NOT NULL,
     PRIMARY KEY (chave)
 );
+
+-- ---------------------------------------------------------------------------
+-- Fase 2: categorização própria
+--
+-- A categoria que a Pluggy devolve é grosseira ("Shopping" não diz nada) e não
+-- se pode editar. A resolução acontece em três camadas, em stg_transacoes:
+--
+--   1. cfg_categorias       regra por texto, a mais precisa            vence
+--   2. cfg_mapa_categorias  de-para do categoryId, cobre o resto
+--   3. cfg_geral            rótulo padrão, para o que sobrou
+--
+-- Sozinha, a camada 1 deixa buraco, e buraco vira "outros" crescendo em
+-- silêncio. Sozinha, a 2 cobre tudo mas é grosseira demais onde importa.
+-- ---------------------------------------------------------------------------
+
+-- PRIMARY KEY em prioridade não é enfeite: é o que impede duas regras de
+-- empatarem. Com empate, a regra vencedora passaria a depender da ordem das
+-- linhas do TOML — e o relatório mudaria sozinho quando alguém reordenasse o
+-- arquivo, sem nenhum teste acusar.
+CREATE TABLE IF NOT EXISTS cfg_categorias (
+    prioridade            INTEGER       NOT NULL,  -- menor vence
+    instituicao           VARCHAR       NOT NULL,  -- padrão LIKE, '%' vale para todas
+    padrao                VARCHAR       NOT NULL,  -- padrão LIKE, em minúsculas
+    categoria             VARCHAR       NOT NULL,  -- rótulo de saída, como escrito
+    grupo                 VARCHAR       NOT NULL,  -- rótulo de saída, como escrito
+    observacao            VARCHAR,
+    PRIMARY KEY (prioridade)
+);
+
+-- Casa por igualdade, não por LIKE: o conjunto de categorias da Pluggy é finito
+-- e conhecido, então a igualdade elimina por construção a chance de duas linhas
+-- casarem a mesma transação.
+CREATE TABLE IF NOT EXISTS cfg_mapa_categorias (
+    id_categoria          VARCHAR       NOT NULL,  -- categoryId da Pluggy, ex.: 05070000
+    categoria             VARCHAR       NOT NULL,
+    grupo                 VARCHAR       NOT NULL,
+    observacao            VARCHAR,
+    PRIMARY KEY (id_categoria)
+);

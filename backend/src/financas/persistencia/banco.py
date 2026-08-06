@@ -189,6 +189,27 @@ class Banco:
                 ],
             )
             self._reescrever(
+                "cfg_categorias",
+                [
+                    (
+                        c.prioridade,
+                        c.instituicao,
+                        c.padrao,
+                        c.categoria,
+                        c.grupo,
+                        c.observacao,
+                    )
+                    for c in regras.categorias
+                ],
+            )
+            self._reescrever(
+                "cfg_mapa_categorias",
+                [
+                    (m.id_categoria, m.categoria, m.grupo, m.observacao)
+                    for m in regras.mapa_categorias
+                ],
+            )
+            self._reescrever(
                 "cfg_geral",
                 [
                     ("data_inicial", regras.data_inicial.isoformat()),
@@ -198,6 +219,10 @@ class Banco:
                         "recorrencia_variacao_maxima",
                         str(regras.recorrencia_variacao_maxima),
                     ),
+                    # Rótulos de quem não casou com nada. Ficam aqui, e não como
+                    # literal no .sql, para poderem ser renomeados sem editar view.
+                    ("categoria_padrao", regras.categoria_padrao),
+                    ("grupo_padrao", regras.grupo_padrao),
                 ],
             )
         except Exception:

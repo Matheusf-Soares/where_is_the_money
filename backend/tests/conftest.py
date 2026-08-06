@@ -76,6 +76,36 @@ valor = "%31900001111%"
 [[frescor]]
 instituicao = "rico%"
 dias_maximos = 10
+
+# Fase 2. Cobre de propósito só uma parte das fixtures: o resto tem que cair no
+# de-para, e alguma coisa tem que sobrar para o rótulo padrão — é assim que as
+# três camadas ficam exercitadas de verdade.
+[[categoria]]
+prioridade = 10
+padrao = "%netflix%"
+categoria = "Streaming"
+grupo = "Lazer"
+
+[[categoria]]
+prioridade = 20
+padrao = "%uber%"
+categoria = "Transporte"
+grupo = "Variável"
+
+[[mapa_categoria]]
+id_categoria = "05070000"
+categoria = "Streaming (mapa)"
+grupo = "Lazer"
+
+[[mapa_categoria]]
+id_categoria = "05010000"
+categoria = "Mercado"
+grupo = "Essencial"
+
+[[mapa_categoria]]
+id_categoria = "05060000"
+categoria = "Academia"
+grupo = "Fixo"
 """
 
 

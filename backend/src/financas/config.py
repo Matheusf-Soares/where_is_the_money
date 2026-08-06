@@ -28,6 +28,13 @@ MODOS_VALIDOS = (MODO_OFFLINE, MODO_ONLINE)
 
 TIPOS_DE_CONTRAPARTE = ("titular", "chave_pix", "contraparte")
 
+# Rótulos de quem não casou com nenhuma regra nem com o de-para. São rótulo, e
+# não NULL, de propósito: NULL some de JOIN e de filtro sem avisar, e gasto que
+# desaparece em silêncio é o modo de falha que este projeto combate. Ficam em
+# `cfg_geral`, então dá para renomeá-los sem tocar em SQL.
+CATEGORIA_PADRAO = "Sem categoria"
+GRUPO_PADRAO = "Sem grupo"
+
 
 class ErroDeConfiguracao(Exception):
     """Configuração ausente, mal formada ou inconsistente.
@@ -90,6 +97,47 @@ class LimiteFrescor:
 
 
 @dataclass(frozen=True)
+class RegraDeCategoria:
+    """Regra que atribui categoria própria pelo texto do lançamento (fase 2).
+
+    É a primeira das três camadas de resolução, e a única precisa: casa contra a
+    descrição **ou** o estabelecimento, porque a Pluggy preenche um ou outro
+    conforme a instituição.
+
+    `prioridade` é obrigatória e única no arquivo inteiro. Sem isso, duas regras
+    que casassem a mesma transação decidiriam pela ordem das linhas no TOML —
+    resultado que muda sozinho quando alguém reordena o arquivo, e que ninguém
+    percebe. Menor número vence.
+
+    `padrao` e `instituicao` são padrões LIKE em minúsculas. `categoria` e
+    `grupo` não são: são rótulo de saída, e aparecem no relatório como escritos.
+    """
+
+    prioridade: int
+    instituicao: str
+    padrao: str
+    categoria: str
+    grupo: str
+    observacao: str = ""
+
+
+@dataclass(frozen=True)
+class MapaDeCategoria:
+    """De-para da categoria da Pluggy para a sua (fase 2).
+
+    Segunda camada: cobre o que nenhuma regra de texto pegou. O casamento é por
+    igualdade no `categoryId` (ex.: `"05070000"`), não por LIKE — o conjunto de
+    categorias da Pluggy é finito e conhecido, então exigir igualdade elimina
+    por construção a chance de duas linhas casarem a mesma transação.
+    """
+
+    id_categoria: str
+    categoria: str
+    grupo: str
+    observacao: str = ""
+
+
+@dataclass(frozen=True)
 class Regras:
     """Conteúdo validado de `config/regras.toml`."""
 
@@ -97,10 +145,14 @@ class Regras:
     frescor_dias_padrao: int
     recorrencia_meses_minimos: int = 2
     recorrencia_variacao_maxima: float = 0.15
+    categoria_padrao: str = CATEGORIA_PADRAO
+    grupo_padrao: str = GRUPO_PADRAO
     padroes_fatura: tuple[PadraoDeDescricao, ...] = ()
     padroes_aplicacao: tuple[PadraoDeDescricao, ...] = ()
     contrapartes_proprias: tuple[ContrapartePropria, ...] = ()
     limites_frescor: tuple[LimiteFrescor, ...] = ()
+    categorias: tuple[RegraDeCategoria, ...] = ()
+    mapa_categorias: tuple[MapaDeCategoria, ...] = ()
 
     # Não há um `dias_de_frescor()` aqui de propósito. Decidir o que está velho é
     # regra de negócio, e regra de negócio mora no SQL — neste caso na consulta
@@ -269,6 +321,16 @@ def carregar_regras(caminho: Path) -> Regras:
                 LimiteFrescor(instituicao, dias, str(bruto.get("observacao", "")))
             )
 
+    categorias = _regras_de_categoria(dados, caminho, problemas)
+    mapa = _mapa_de_categorias(dados, caminho, problemas)
+
+    categoria_padrao = _rotulo_de_geral(
+        geral, "categoria_padrao", CATEGORIA_PADRAO, caminho, problemas
+    )
+    grupo_padrao = _rotulo_de_geral(
+        geral, "grupo_padrao", GRUPO_PADRAO, caminho, problemas
+    )
+
     if problemas:
         raise ErroDeConfiguracao(problemas)
 
@@ -277,10 +339,14 @@ def carregar_regras(caminho: Path) -> Regras:
         frescor_dias_padrao=frescor_padrao,  # type: ignore[arg-type]
         recorrencia_meses_minimos=meses_minimos,
         recorrencia_variacao_maxima=variacao_maxima,
+        categoria_padrao=categoria_padrao,
+        grupo_padrao=grupo_padrao,
         padroes_fatura=tuple(padroes),
         padroes_aplicacao=tuple(aplicacoes),
         contrapartes_proprias=tuple(contrapartes),
         limites_frescor=tuple(limites),
+        categorias=tuple(categorias),
+        mapa_categorias=tuple(mapa),
     )
 
 
@@ -447,6 +513,123 @@ def _padroes_de_descricao(
                 PadraoDeDescricao(instituicao, padrao, str(bruto.get("observacao", "")))
             )
     return padroes
+
+
+def _regras_de_categoria(
+    dados: dict, caminho: Path, problemas: list[str]
+) -> list[RegraDeCategoria]:
+    """Lê `[[categoria]]`: a camada de regra por texto da fase 2.
+
+    Recusa prioridade repetida. Duas regras com a mesma prioridade que casassem
+    a mesma transação teriam desempate arbitrário, e o resultado passaria a
+    depender da ordem das linhas no arquivo — falha que não aparece em teste
+    nenhum e muda o relatório quando alguém reordena o TOML.
+    """
+    regras: list[RegraDeCategoria] = []
+    vistas: dict[int, str] = {}
+
+    for indice, bruto in enumerate(
+        _lista_de_tabelas(dados, "categoria", caminho, problemas)
+    ):
+        rotulo = f"{caminho}: [[categoria]] #{indice + 1}"
+
+        padrao = _texto(bruto, "padrao", rotulo, problemas)
+        categoria = _texto(bruto, "categoria", rotulo, problemas)
+        grupo = _texto(bruto, "grupo", rotulo, problemas)
+
+        # Ausente vale para todas, igual às outras seções.
+        instituicao = str(bruto.get("instituicao", "%")).strip() or "%"
+
+        _exigir_minusculas(padrao, "padrao", rotulo, problemas)
+        _exigir_minusculas(instituicao, "instituicao", rotulo, problemas)
+
+        prioridade = bruto.get("prioridade")
+        if not isinstance(prioridade, int) or isinstance(prioridade, bool):
+            problemas.append(
+                f"{rotulo}: prioridade é obrigatória e deve ser inteiro "
+                f"(menor vence), recebi {prioridade!r}"
+            )
+            continue
+        if prioridade in vistas:
+            problemas.append(
+                f"{rotulo}: prioridade {prioridade} já é usada por {vistas[prioridade]!r}. "
+                f"Prioridade precisa ser única, senão o desempate entre duas regras "
+                f"que casam a mesma transação vira a ordem das linhas do arquivo."
+            )
+            continue
+
+        if padrao and categoria and grupo:
+            vistas[prioridade] = padrao
+            regras.append(
+                RegraDeCategoria(
+                    prioridade=prioridade,
+                    instituicao=instituicao,
+                    padrao=padrao,
+                    categoria=categoria,
+                    grupo=grupo,
+                    observacao=str(bruto.get("observacao", "")),
+                )
+            )
+
+    return sorted(regras, key=lambda r: r.prioridade)
+
+
+def _mapa_de_categorias(
+    dados: dict, caminho: Path, problemas: list[str]
+) -> list[MapaDeCategoria]:
+    """Lê `[[mapa_categoria]]`: o de-para da categoria da Pluggy.
+
+    Recusa `id_categoria` repetido pelo mesmo motivo da prioridade — só que
+    aqui a unicidade também é o que permite casar por igualdade em vez de LIKE.
+    """
+    mapa: list[MapaDeCategoria] = []
+    vistos: set[str] = set()
+
+    for indice, bruto in enumerate(
+        _lista_de_tabelas(dados, "mapa_categoria", caminho, problemas)
+    ):
+        rotulo = f"{caminho}: [[mapa_categoria]] #{indice + 1}"
+
+        id_categoria = _texto(bruto, "id_categoria", rotulo, problemas)
+        categoria = _texto(bruto, "categoria", rotulo, problemas)
+        grupo = _texto(bruto, "grupo", rotulo, problemas)
+
+        if id_categoria and id_categoria in vistos:
+            problemas.append(
+                f"{rotulo}: id_categoria {id_categoria!r} aparece mais de uma vez. "
+                f"O de-para casa por igualdade, então cada id só pode ter um destino."
+            )
+            continue
+
+        if id_categoria and categoria and grupo:
+            vistos.add(id_categoria)
+            mapa.append(
+                MapaDeCategoria(
+                    id_categoria=id_categoria,
+                    categoria=categoria,
+                    grupo=grupo,
+                    observacao=str(bruto.get("observacao", "")),
+                )
+            )
+
+    return mapa
+
+
+def _rotulo_de_geral(
+    geral: dict, campo: str, padrao: str, caminho: Path, problemas: list[str]
+) -> str:
+    """Lê um rótulo de saída de `[geral]`, tolerando ausência.
+
+    Diferente dos padrões LIKE, rótulo não é normalizado para minúsculas: ele
+    aparece no relatório exatamente como foi escrito.
+    """
+    valor = geral.get(campo, padrao)
+    if not isinstance(valor, str) or not valor.strip():
+        problemas.append(
+            f"{caminho}: geral.{campo} deve ser um texto não vazio, recebi {valor!r}"
+        )
+        return padrao
+    return valor.strip()
 
 
 def _inteiro_de_geral(

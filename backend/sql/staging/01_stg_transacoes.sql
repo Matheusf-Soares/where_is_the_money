@@ -8,6 +8,11 @@
 -- meu total?" consulta stg_transacoes e vê a bandeira que a excluiu, em vez de
 -- caçar o filtro dentro de um WHERE.
 --
+-- Ela também resolve a categoria própria (fase 2), em três camadas: regra por
+-- texto, de-para do categoryId da Pluggy, e um rótulo padrão para o resto. A
+-- coluna `origem_da_categoria` diz qual camada decidiu — pelo mesmo motivo das
+-- bandeiras, auditar deve ser um SELECT e não uma caçada.
+--
 -- Nenhum padrão está escrito aqui. Tudo vem das tabelas cfg_*, que são o
 -- espelho do config/regras.toml.
 
@@ -27,6 +32,9 @@ WITH base AS (
         tipo,
         situacao,
         categoria,
+        -- categoryId da Pluggy. É hierárquico (05070000 = Streaming dentro de
+        -- 05), e é a chave do de-para da fase 2.
+        id_categoria,
         estabelecimento_nome                        AS estabelecimento,
         estabelecimento_cnpj,
         cartao_final,
@@ -37,6 +45,7 @@ WITH base AS (
         recebedor_chave_pix,
 
         lower(coalesce(descricao, descricao_original, ''))  AS descricao_busca,
+        lower(coalesce(estabelecimento_nome, ''))           AS estabelecimento_busca,
         lower(coalesce(instituicao, ''))                    AS instituicao_busca,
         lower(coalesce(pagador_nome, ''))                   AS pagador_busca,
         lower(coalesce(recebedor_nome, ''))                 AS recebedor_busca,
@@ -46,6 +55,38 @@ WITH base AS (
     FROM raw_transacoes
     -- Transação cancelada nunca movimentou dinheiro.
     WHERE coalesce(situacao, '') <> 'CANCELLED'
+),
+
+-- Fase 2, camada 1: regra por texto.
+--
+-- Casa contra a descrição OU o estabelecimento, porque a Pluggy preenche um ou
+-- outro conforme a instituição. Várias regras podem casar a mesma transação; o
+-- row_number resolve pela prioridade, e a unicidade de `prioridade` (PRIMARY
+-- KEY em cfg_categorias) garante que esse desempate é determinístico.
+regra_casada AS (
+    SELECT
+        b.id_transacao,
+        r.categoria,
+        r.grupo,
+        row_number() OVER (
+            PARTITION BY b.id_transacao ORDER BY r.prioridade
+        ) AS posicao
+    FROM base b
+    JOIN cfg_categorias r
+      ON b.instituicao_busca LIKE r.instituicao
+     AND (
+            b.descricao_busca       LIKE r.padrao
+         OR b.estabelecimento_busca LIKE r.padrao
+     )
+),
+
+-- Camada 3: os rótulos de quem não casou com nada. Vêm de cfg_geral em vez de
+-- literal aqui, para poderem ser renomeados sem editar esta view.
+rotulos AS (
+    SELECT
+        max(CASE WHEN chave = 'categoria_padrao' THEN valor END) AS categoria_padrao,
+        max(CASE WHEN chave = 'grupo_padrao'     THEN valor END) AS grupo_padrao
+    FROM cfg_geral
 )
 SELECT
     b.id_transacao,
@@ -64,6 +105,27 @@ SELECT
     b.tipo,
     b.situacao,
     b.categoria,
+    b.id_categoria,
+
+    -- Fase 2: a categoria própria, resolvida nas três camadas.
+    --
+    -- O coalesce é a resolução inteira: regra por texto, senão de-para do
+    -- categoryId, senão o rótulo padrão. Nunca NULL — categoria que some de um
+    -- GROUP BY é gasto que desaparece do relatório sem ninguém notar.
+    --
+    -- `categoria` (a da Pluggy) continua ao lado, para auditar o de-para: dá
+    -- para ver o que a fonte dizia e o que virou.
+    coalesce(rc.categoria, m.categoria, r.categoria_padrao)  AS categoria_propria,
+    coalesce(rc.grupo,     m.grupo,     r.grupo_padrao)      AS grupo,
+
+    -- De qual camada veio. Sem isso, "por que essa transação está em Lazer?"
+    -- vira caçada; com isso, é uma coluna. Mesma lógica das três bandeiras.
+    CASE
+        WHEN rc.categoria IS NOT NULL THEN 'regra'
+        WHEN m.categoria  IS NOT NULL THEN 'mapa'
+        ELSE 'padrao'
+    END                                                      AS origem_da_categoria,
+
     b.estabelecimento,
     b.estabelecimento_cnpj,
     b.cartao_final,
@@ -113,4 +175,10 @@ SELECT
         WHERE b.instituicao_busca LIKE a.instituicao
           AND b.descricao_busca   LIKE a.padrao
     ) AS e_aplicacao
-FROM base b;
+FROM base b
+LEFT JOIN regra_casada rc
+       ON rc.id_transacao = b.id_transacao
+      AND rc.posicao = 1
+LEFT JOIN cfg_mapa_categorias m
+       ON m.id_categoria = b.id_categoria
+CROSS JOIN rotulos r;
