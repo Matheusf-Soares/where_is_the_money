@@ -29,6 +29,7 @@ from financas.config import (
     carregar_configuracao,
     raiz_do_projeto,
 )
+from financas.diagnostico import INTERPRETACAO_401, diagnosticar
 from financas.frescor import atrasadas, verificar_frescor
 from financas.ingestao import ingerir
 from financas.persistencia import Banco
@@ -347,6 +348,33 @@ def _auditar_categorias(config: Configuracao) -> int:
     return SAIDA_OK
 
 
+def comando_diagnostico(argumentos: argparse.Namespace, config: Configuracao) -> int:
+    """Testa a conexão com a Pluggy passo a passo e mostra o que voltou.
+
+    Não usa `ClienteHttp` de propósito: se o problema estiver no cliente, usar
+    o cliente para investigar esconderia justamente o que se quer ver.
+    """
+    if config.offline:
+        print(
+            "diagnóstico só faz sentido em modo online. "
+            "Rode: python -m financas diagnostico --modo online",
+            file=sys.stderr,
+        )
+        return SAIDA_ERRO
+
+    achados = diagnosticar(config)
+    for achado in achados:
+        print(achado)
+
+    houve_falha = any(a.ok is False for a in achados)
+    if houve_falha:
+        print(file=sys.stderr)
+        print(INTERPRETACAO_401, file=sys.stderr)
+        return SAIDA_ERRO
+
+    return SAIDA_OK
+
+
 def comando_status(argumentos: argparse.Namespace, config: Configuracao) -> int:
     """Resumo do que existe no banco. Comando de inspeção, não altera nada."""
     print(f"modo:    {config.modo}")
@@ -506,6 +534,13 @@ def construir_analisador() -> argparse.ArgumentParser:
         help="escreve o bloco gerado neste arquivo em vez da saída padrão",
     )
     categorias_.set_defaults(executar=comando_categorias)
+
+    diagnostico_ = sub.add_parser(
+        "diagnostico",
+        help="testa a conexão com a Pluggy passo a passo (não imprime segredo)",
+        parents=[globais],
+    )
+    diagnostico_.set_defaults(executar=comando_diagnostico)
 
     status_ = sub.add_parser(
         "status", help="resumo do que existe no banco", parents=[globais]

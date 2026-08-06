@@ -300,6 +300,7 @@ python -m financas ingerir     # baixa e grava na camada raw
 python -m financas views       # recarrega cfg_* e aplica os .sql
 python -m financas frescor     # alguém parou de trazer dado novo?
 python -m financas categorias  # regra morta e cobertura da categorização
+python -m financas diagnostico # testa a conexão com a Pluggy passo a passo
 python -m financas publicar    # exporta as views em Parquet para o frontend
 python -m financas status      # o que existe no banco
 ```
