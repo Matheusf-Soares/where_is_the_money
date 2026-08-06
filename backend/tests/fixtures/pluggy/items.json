@@ -1,0 +1,77 @@
+{
+  "results": [
+    {
+      "id": "item-picpay",
+      "status": "UPDATED",
+      "executionStatus": "SUCCESS",
+      "createdAt": "2025-08-01T10:00:00.000Z",
+      "updatedAt": "2025-08-06T03:12:00.000Z",
+      "lastUpdatedAt": "2025-08-06T03:12:00.000Z",
+      "connector": {
+        "id": 200,
+        "name": "PicPay",
+        "type": "PERSONAL_BANK",
+        "country": "BR"
+      }
+    },
+    {
+      "id": "item-santander",
+      "status": "UPDATED",
+      "executionStatus": "SUCCESS",
+      "createdAt": "2025-08-01T10:00:00.000Z",
+      "updatedAt": "2025-09-16T03:12:00.000Z",
+      "lastUpdatedAt": "2025-09-16T03:12:00.000Z",
+      "connector": {
+        "id": 200,
+        "name": "Santander",
+        "type": "PERSONAL_BANK",
+        "country": "BR"
+      }
+    },
+    {
+      "id": "item-nubank",
+      "status": "UPDATED",
+      "executionStatus": "SUCCESS",
+      "createdAt": "2025-08-01T10:00:00.000Z",
+      "updatedAt": "2025-09-16T03:12:00.000Z",
+      "lastUpdatedAt": "2025-09-16T03:12:00.000Z",
+      "connector": {
+        "id": 200,
+        "name": "Nubank",
+        "type": "PERSONAL_BANK",
+        "country": "BR"
+      }
+    },
+    {
+      "id": "item-inter",
+      "status": "UPDATED",
+      "executionStatus": "SUCCESS",
+      "createdAt": "2025-08-01T10:00:00.000Z",
+      "updatedAt": "2025-09-16T03:12:00.000Z",
+      "lastUpdatedAt": "2025-09-16T03:12:00.000Z",
+      "connector": {
+        "id": 200,
+        "name": "Inter",
+        "type": "PERSONAL_BANK",
+        "country": "BR"
+      }
+    },
+    {
+      "id": "item-rico",
+      "status": "UPDATED",
+      "executionStatus": "SUCCESS",
+      "createdAt": "2025-08-01T10:00:00.000Z",
+      "updatedAt": "2025-09-16T03:12:00.000Z",
+      "lastUpdatedAt": "2025-09-16T03:12:00.000Z",
+      "connector": {
+        "id": 200,
+        "name": "Rico Investimentos",
+        "type": "INVESTMENT",
+        "country": "BR"
+      }
+    }
+  ],
+  "page": 1,
+  "total": 5,
+  "totalPages": 1
+}

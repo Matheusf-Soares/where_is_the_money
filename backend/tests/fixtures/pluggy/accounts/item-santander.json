@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "id": "conta-santander-bank",
+      "itemId": "item-santander",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Conta Corrente",
+      "marketingName": "Santander Van Gogh",
+      "number": "01012345-6",
+      "balance": 2310.05,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "bankData": {
+        "transferNumber": "0101/01012345-6",
+        "closingBalance": 2310.05
+      }
+    },
+    {
+      "id": "conta-santander-credit",
+      "itemId": "item-santander",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "Cartao Santander",
+      "marketingName": "Santander Unlimited",
+      "number": "**** 9876",
+      "balance": 132.40,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "creditData": {
+        "level": "PLATINUM",
+        "brand": "VISA",
+        "balanceCloseDate": "2025-09-20",
+        "balanceDueDate": "2025-09-30",
+        "availableCreditLimit": 5867.60,
+        "creditLimit": 6000.00
+      }
+    }
+  ],
+  "page": 1,
+  "total": 2,
+  "totalPages": 1
+}

@@ -1,0 +1,23 @@
+{
+  "results": [
+    {
+      "id": "conta-inter-bank",
+      "itemId": "item-inter",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Conta Inter",
+      "marketingName": "Inter",
+      "number": "99887766-5",
+      "balance": 1580.22,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "bankData": {
+        "transferNumber": "0001/99887766-5",
+        "closingBalance": 1580.22
+      }
+    }
+  ],
+  "page": 1,
+  "total": 1,
+  "totalPages": 1
+}

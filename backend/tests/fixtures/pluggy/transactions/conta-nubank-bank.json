@@ -1,0 +1,141 @@
+{
+  "results": [
+    {
+      "id": "tx-nu-b-01",
+      "accountId": "conta-nubank-bank",
+      "description": "Pagamento de fatura",
+      "descriptionRaw": "PAGAMENTO DE FATURA",
+      "amount": -1200.00,
+      "currencyCode": "BRL",
+      "date": "2025-09-10T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 4812.44,
+      "category": "Credit card payment",
+      "categoryId": "07000000"
+    },
+    {
+      "id": "tx-nu-b-02",
+      "accountId": "conta-nubank-bank",
+      "description": "Transferência enviada pelo Pix - FULANO DE TAL - 123.456.789-09",
+      "descriptionRaw": "TRANSFERENCIA ENVIADA PELO PIX",
+      "amount": -500.00,
+      "currencyCode": "BRL",
+      "date": "2025-08-05T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 6012.44,
+      "category": "Transfers",
+      "categoryId": "06000000",
+      "paymentData": {
+        "paymentMethod": "PIX",
+        "payer": {
+          "name": "FULANO DE TAL",
+          "documentNumber": {"type": "CPF", "value": "12345678909"}
+        },
+        "receiver": {
+          "name": "FULANO DE TAL",
+          "documentNumber": {"type": "CPF", "value": "12345678909"},
+          "pixKey": "123.456.789-09"
+        }
+      }
+    },
+    {
+      "id": "tx-nu-b-03",
+      "accountId": "conta-nubank-bank",
+      "description": "Salário",
+      "descriptionRaw": "CREDITO SALARIO",
+      "amount": 7000.00,
+      "currencyCode": "BRL",
+      "date": "2025-09-01T00:00:00.000Z",
+      "type": "CREDIT",
+      "status": "POSTED",
+      "balance": 6512.44,
+      "category": "Income",
+      "categoryId": "01000000"
+    },
+    {
+      "id": "tx-nu-b-04",
+      "accountId": "conta-nubank-bank",
+      "description": "Supermercado Big",
+      "descriptionRaw": "SUPERMERCADO BIG LTDA",
+      "amount": -320.55,
+      "currencyCode": "BRL",
+      "date": "2025-09-03T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 6191.89,
+      "category": "Supermarket",
+      "categoryId": "05010000",
+      "merchant": {
+        "name": "Supermercado Big",
+        "businessName": "SUPERMERCADO BIG LTDA",
+        "cnpj": "11222333000144",
+        "category": "Supermarket"
+      }
+    },
+    {
+      "id": "tx-nu-b-05",
+      "accountId": "conta-nubank-bank",
+      "description": "Netflix.com",
+      "descriptionRaw": "NETFLIX.COM",
+      "amount": -55.90,
+      "currencyCode": "BRL",
+      "date": "2025-09-08T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 6135.99,
+      "category": "Streaming",
+      "categoryId": "05070000",
+      "merchant": {
+        "name": "Netflix",
+        "businessName": "NETFLIX ENTRETENIMENTO BRASIL LTDA",
+        "cnpj": "13590585000199",
+        "category": "Streaming"
+      }
+    },
+    {
+      "id": "tx-nu-b-06",
+      "accountId": "conta-nubank-bank",
+      "description": "Netflix.com",
+      "descriptionRaw": "NETFLIX.COM",
+      "amount": -55.90,
+      "currencyCode": "BRL",
+      "date": "2025-08-08T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 5956.54,
+      "category": "Streaming",
+      "categoryId": "05070000",
+      "merchant": {
+        "name": "Netflix",
+        "businessName": "NETFLIX ENTRETENIMENTO BRASIL LTDA",
+        "cnpj": "13590585000199",
+        "category": "Streaming"
+      }
+    },
+    {
+      "id": "tx-nu-b-07",
+      "accountId": "conta-nubank-bank",
+      "description": "Supermercado Big",
+      "descriptionRaw": "SUPERMERCADO BIG LTDA",
+      "amount": -89.20,
+      "currencyCode": "BRL",
+      "date": "2025-08-15T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 5867.34,
+      "category": "Supermarket",
+      "categoryId": "05010000",
+      "merchant": {
+        "name": "Supermercado Big",
+        "businessName": "SUPERMERCADO BIG LTDA",
+        "cnpj": "11222333000144",
+        "category": "Supermarket"
+      }
+    }
+  ],
+  "page": 1,
+  "total": 7,
+  "totalPages": 1
+}

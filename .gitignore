@@ -1,0 +1,34 @@
+# Segredos e dado financeiro real: nada disso pode entrar no repositório.
+.env
+.env.*
+*.duckdb
+*.duckdb.wal
+dados/
+
+# Identifica contas próprias por nome do titular e chave Pix.
+# Só o exemplo é versionado.
+config/regras.toml
+
+# Fixtures baixadas da API real (as sintéticas de tests/fixtures são versionadas).
+fixtures_reais/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Node (fase 3)
+node_modules/
+.next/
+.vite/
+
+# Editor e SO
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "id": "conta-rico-bank",
+      "itemId": "item-rico",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Conta Rico",
+      "marketingName": "Rico Investimentos",
+      "number": "31122334-4",
+      "balance": 105.00,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "bankData": {
+        "transferNumber": "0001/31122334-4",
+        "closingBalance": 105.00
+      }
+    },
+    {
+      "id": "conta-rico-credit",
+      "itemId": "item-rico",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "Cartao Rico",
+      "marketingName": "Rico Mastercard",
+      "number": "**** 1122",
+      "balance": 120.00,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "creditData": {
+        "level": "BLACK",
+        "brand": "MASTERCARD",
+        "balanceCloseDate": "2025-09-28",
+        "balanceDueDate": "2025-10-08",
+        "availableCreditLimit": 4880.00,
+        "creditLimit": 5000.00
+      }
+    }
+  ],
+  "page": 1,
+  "total": 2,
+  "totalPages": 1
+}

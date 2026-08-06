@@ -1,0 +1,155 @@
+# Regras de negócio do pipeline. Copie para `config/regras.toml` e preencha.
+#
+# O arquivo real fica no .gitignore porque identifica contas próprias por nome
+# do titular e chave Pix, e o repositório não pode conter dado pessoal. Aqui
+# ficam só a estrutura e os placeholders.
+#
+# Este é o único lugar onde filtros de gasto são definidos. As views SQL não têm
+# nenhum padrão hardcoded: elas leem as tabelas `cfg_*`, carregadas a partir
+# daqui. Mudar um filtro é mudar este arquivo e rodar
+# `python -m financas.cli views` de novo, sem reingestão.
+#
+# Os padrões usam sintaxe LIKE de SQL (`%` = qualquer coisa) e são comparados em
+# minúsculas, então escreva tudo em minúscula aqui.
+#
+# ATENÇÃO ao campo `instituicao`: ele também é padrão LIKE, e precisa casar com
+# o `connector.name` que a API devolve — que nem sempre é o nome curto. A Rico
+# vem como "Rico Investimentos", então `instituicao = "rico"` não pegaria nada.
+# Use `"rico%"`. E `"%"` sozinho vale para todas as instituições.
+
+[geral]
+# Armadilha 9: não existe histórico antes disso. Ingestão não pede nada anterior.
+data_inicial = 2025-08-01
+
+# Armadilha 4 e 5: com latência de até 24h, alertar cedo demais gera ruído.
+# Instituição sem transação nova há mais dias que isto vira alerta.
+frescor_dias_padrao = 5
+
+# Recorrência: quantos meses distintos uma assinatura precisa aparecer para
+# entrar na view, e quanto o valor pode oscilar entre eles (fração, não %).
+#
+# O histórico começa em 2025-08, então exigir 3 meses deixaria a view vazia por
+# um bom tempo. Suba para 3 quando tiver histórico suficiente.
+recorrencia_meses_minimos = 2
+recorrencia_variacao_maxima = 0.15
+
+
+# ---------------------------------------------------------------------------
+# Armadilha 1: pagamento de fatura de cartão
+#
+# A compra já aparece na conta CREDIT. Quando a fatura é paga, o débito aparece
+# de novo na conta BANK. Somar os dois dobra o gasto, então o pagamento precisa
+# sair. O texto varia por instituição — daí a lista.
+#
+# Os padrões abaixo são um chute informado. Confirme cada um contra as
+# descrições reais depois da primeira ingestão.
+# ---------------------------------------------------------------------------
+
+[[pagamento_fatura]]
+instituicao = "nubank"
+padrao = "%pagamento de fatura%"
+
+[[pagamento_fatura]]
+instituicao = "nubank"
+padrao = "%pagamento recebido%"
+observacao = "Aparece do lado do cartão quando a fatura é quitada."
+
+[[pagamento_fatura]]
+instituicao = "santander"
+padrao = "%pagto%cartao%"
+
+[[pagamento_fatura]]
+instituicao = "santander"
+padrao = "%pagamento%cartao de credito%"
+
+[[pagamento_fatura]]
+instituicao = "rico%"
+padrao = "%pagamento de fatura%"
+observacao = "Cartão vinculado à conta Rico. O conector vem como 'Rico Investimentos', daí o %."
+
+[[pagamento_fatura]]
+instituicao = "picpay"
+padrao = "%pagamento de fatura%"
+
+[[pagamento_fatura]]
+instituicao = "inter"
+padrao = "%pagamento fatura%"
+observacao = "O Inter costuma escrever sem a preposição."
+
+[[pagamento_fatura]]
+instituicao = "%"
+padrao = "%fatura cartao%"
+observacao = "Coringa: % casa com qualquer instituição."
+
+
+# ---------------------------------------------------------------------------
+# Armadilha 3: aplicação em investimento não é despesa
+#
+# Aporte que sai da conta corrente aparece como débito numa conta BANK, e não
+# pelo contexto Investments. O dinheiro não foi gasto: continua seu, só mudou de
+# lugar. Sem este filtro, cada aporte infla o total do mês.
+#
+# Resgate (o caminho inverso) também entra aqui: não é receita.
+# ---------------------------------------------------------------------------
+
+[[aplicacao]]
+instituicao = "%"
+padrao = "%aplicacao%"
+
+[[aplicacao]]
+instituicao = "%"
+padrao = "%aplicação%"
+
+[[aplicacao]]
+instituicao = "%"
+padrao = "%resgate%"
+
+[[aplicacao]]
+instituicao = "rico%"
+padrao = "%cdb%"
+observacao = "CONFIRMAR contra as descrições reais da Rico."
+
+# ---------------------------------------------------------------------------
+# Armadilha 2: transferência entre contas próprias
+#
+# Mover dinheiro entre PicPay, Santander, Nubank e Rico não é gasto. Identifica
+# a contraparte por três vias, porque nem toda transação traz todos os campos.
+#
+# tipo:
+#   titular      -> nome do titular como aparece na descrição/contraparte
+#   chave_pix    -> chave Pix própria (e-mail, telefone, CPF, aleatória)
+#   contraparte  -> documento ou nome de conta própria conhecida
+# ---------------------------------------------------------------------------
+
+[[transferencia_propria]]
+tipo = "titular"
+valor = "%<seu nome como aparece no extrato>%"
+
+[[transferencia_propria]]
+tipo = "chave_pix"
+valor = "%<sua chave pix: e-mail, telefone, cpf ou aleatória>%"
+
+[[transferencia_propria]]
+tipo = "contraparte"
+valor = "%<cpf ou nome de conta própria conhecida>%"
+
+# Um bloco por valor, e um bloco por FORMATO do mesmo valor: cada instituição
+# escreve documento e telefone do seu jeito. Um CPF pode aparecer como
+# `12345678900` e como `123.456.789-00`; um telefone, com e sem DDI. Cobrir só
+# um formato deixa metade das transferências passando como gasto.
+#
+# Também vale lembrar que transferência por TED/agência+conta não traz chave
+# nenhuma — para essas, use `tipo = "titular"` ou `tipo = "contraparte"`.
+
+
+# ---------------------------------------------------------------------------
+# Armadilha 4: frescor por instituição
+#
+# Sobrescreve `frescor_dias_padrao` quando uma instituição atualiza em ritmo
+# diferente. Instituição não listada usa o padrão.
+# ---------------------------------------------------------------------------
+
+[[frescor]]
+instituicao = "rico%"
+dias_maximos = 10
+observacao = "Contexto Investments atualiza com menos frequência que conta corrente."

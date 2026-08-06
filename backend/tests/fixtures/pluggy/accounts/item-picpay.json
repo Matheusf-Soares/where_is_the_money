@@ -1,0 +1,23 @@
+{
+  "results": [
+    {
+      "id": "conta-picpay-bank",
+      "itemId": "item-picpay",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Conta PicPay",
+      "marketingName": "PicPay",
+      "number": "5566778-9",
+      "balance": 743.10,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "bankData": {
+        "transferNumber": "0001/5566778-9",
+        "closingBalance": 743.10
+      }
+    }
+  ],
+  "page": 1,
+  "total": 1,
+  "totalPages": 1
+}

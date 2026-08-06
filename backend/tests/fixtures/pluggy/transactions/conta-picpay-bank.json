@@ -1,0 +1,54 @@
+{
+  "_comentario": "PicPay parou em agosto de propósito: é o caso de teste da armadilha 4 (consentimento vencido não quebra o pipeline, só para de trazer dado novo).",
+  "results": [
+    {
+      "id": "tx-pp-b-01",
+      "accountId": "conta-picpay-bank",
+      "description": "Pix recebido - FULANO DE TAL - 123.456.789-09",
+      "descriptionRaw": "PIX RECEBIDO",
+      "amount": 500.00,
+      "currencyCode": "BRL",
+      "date": "2025-08-05T00:00:00.000Z",
+      "type": "CREDIT",
+      "status": "POSTED",
+      "balance": 805.40,
+      "category": "Transfers",
+      "categoryId": "06000000",
+      "paymentData": {
+        "paymentMethod": "PIX",
+        "payer": {
+          "name": "FULANO DE TAL",
+          "documentNumber": {"type": "CPF", "value": "12345678909"}
+        },
+        "receiver": {
+          "name": "FULANO DE TAL",
+          "documentNumber": {"type": "CPF", "value": "12345678909"},
+          "pixKey": "123.456.789-09"
+        }
+      }
+    },
+    {
+      "id": "tx-pp-b-02",
+      "accountId": "conta-picpay-bank",
+      "description": "iFood",
+      "descriptionRaw": "IFOOD *PEDIDO",
+      "amount": -62.30,
+      "currencyCode": "BRL",
+      "date": "2025-08-06T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 743.10,
+      "category": "Food delivery",
+      "categoryId": "05030000",
+      "merchant": {
+        "name": "iFood",
+        "businessName": "IFOOD COM AGENCIA DE RESTAURANTES ONLINE SA",
+        "cnpj": "14380200000121",
+        "category": "Food delivery"
+      }
+    }
+  ],
+  "page": 1,
+  "total": 2,
+  "totalPages": 1
+}

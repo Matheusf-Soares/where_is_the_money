@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "id": "conta-nubank-bank",
+      "itemId": "item-nubank",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Conta do Nubank",
+      "marketingName": "NuConta",
+      "number": "1234567-8",
+      "balance": 4812.44,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "bankData": {
+        "transferNumber": "0001/1234567-8",
+        "closingBalance": 4812.44
+      }
+    },
+    {
+      "id": "conta-nubank-credit",
+      "itemId": "item-nubank",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "Cartao Nubank",
+      "marketingName": "Nubank Ultravioleta",
+      "number": "**** 4321",
+      "balance": 1196.80,
+      "currencyCode": "BRL",
+      "owner": "Fulano de Tal",
+      "creditData": {
+        "level": "BLACK",
+        "brand": "MASTERCARD",
+        "balanceCloseDate": "2025-09-25",
+        "balanceDueDate": "2025-10-05",
+        "availableCreditLimit": 8803.20,
+        "creditLimit": 10000.00
+      }
+    }
+  ],
+  "page": 1,
+  "total": 2,
+  "totalPages": 1
+}

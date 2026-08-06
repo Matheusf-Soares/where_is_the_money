@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "id": "tx-sa-c-01",
+      "accountId": "conta-santander-credit",
+      "description": "Restaurante Xis",
+      "descriptionRaw": "RESTAURANTE XIS LTDA",
+      "amount": -87.40,
+      "currencyCode": "BRL",
+      "date": "2025-09-11T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "category": "Food and drinks",
+      "categoryId": "05020000",
+      "creditCardMetadata": {
+        "cardNumber": "9876",
+        "installmentNumber": null,
+        "totalInstallments": null
+      }
+    },
+    {
+      "id": "tx-sa-c-02",
+      "accountId": "conta-santander-credit",
+      "description": "Farmacia Pague Menos",
+      "descriptionRaw": "FARMACIA PAGUE MENOS 55",
+      "amount": -45.00,
+      "currencyCode": "BRL",
+      "date": "2025-09-13T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "category": "Healthcare",
+      "categoryId": "05050000",
+      "creditCardMetadata": {
+        "cardNumber": "9876",
+        "installmentNumber": null,
+        "totalInstallments": null
+      }
+    }
+  ],
+  "page": 1,
+  "total": 2,
+  "totalPages": 1
+}

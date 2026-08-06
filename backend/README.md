@@ -1,0 +1,590 @@
+# where_is_the_money
+
+Pipeline pessoal de ingestão e análise de gastos, alimentado pela API da Pluggy
+via Open Finance.
+
+A ideia é simples: puxar o extrato de todas as instituições financeiras para um
+banco local e responder, com SQL, perguntas que os apps de controle financeiro
+prontos não deixam responder — quanto gastei por categoria, quais assinaturas
+estão ativas, qual categoria fugiu da média, como o patrimônio evoluiu.
+
+> **Estado atual:** fase 1 completa — ingestão, persistência, views e testes.
+> Falta validar contra a API real, o que é feito fora do ambiente de
+> desenvolvimento. Ver [Estado atual](#estado-atual).
+
+---
+
+## Índice
+
+1. [O problema que o projeto resolve](#1-o-problema-que-o-projeto-resolve)
+2. [De onde vêm os dados](#2-de-onde-vêm-os-dados)
+3. [A arquitetura em três camadas](#3-a-arquitetura-em-três-camadas)
+4. [Os três princípios](#4-os-três-princípios)
+5. [As armadilhas do domínio](#5-as-armadilhas-do-domínio)
+6. [Configuração: duas fontes, dois propósitos](#6-configuração-duas-fontes-dois-propósitos)
+7. [Modo offline: desenvolver sem rede](#7-modo-offline-desenvolver-sem-rede)
+8. [Estrutura de diretórios](#8-estrutura-de-diretórios)
+9. [Como rodar](#9-como-rodar)
+10. [Estado atual](#estado-atual)
+
+---
+
+## 1. O problema que o projeto resolve
+
+Quem tem conta em quatro instituições diferentes não tem um extrato — tem
+quatro. Os apps de controle financeiro prontos até agregam isso, mas engessam a
+categorização e não deixam construir série histórica customizada.
+
+O objetivo aqui é ter **os dados brutos em casa**, num banco analítico local, e
+tratar a análise como um problema de SQL. O frontend virá depois (fase 3) e vai
+consumir as views definidas neste backend. Por isso vale a regra: **as views são
+o contrato público do projeto**.
+
+**Fora de escopo nesta fase:** dashboard, gráfico, frontend, Docker, deploy,
+autenticação. É um projeto local, single-user.
+
+---
+
+## 2. De onde vêm os dados
+
+### Os dois portais da Pluggy
+
+Esse é o ponto que mais confunde quem começa. A Pluggy tem dois portais, com
+contas de login **separadas**:
+
+| Portal | URL | Para quê |
+|---|---|---|
+| **Meu Pluggy** | `meu.pluggy.ai` | Onde você, como titular, autoriza os bancos |
+| **Dashboard** | `dashboard.pluggy.ai` | Onde você, como desenvolvedor, cria a aplicação e pega as credenciais |
+
+A ponte entre os dois é o conector **MeuPluggy (id 200)**: dentro da aplicação
+criada no Dashboard, cria-se um *item* com esse conector, autenticando com a
+conta do Meu Pluggy. É isso que expõe, para a API, os dados que você já
+autorizou do outro lado.
+
+O ambiente usado é o de **Desenvolvimento**. Produção é trilha comercial, com
+análise de vendas — desnecessária para uso pessoal.
+
+### O vocabulário da API
+
+Três conceitos encaixados, que se repetem no código inteiro:
+
+```
+item          uma conexão autorizada com uma instituição  (ex.: "meu Nubank")
+ └─ account   uma conta dentro dessa instituição          (BANK ou CREDIT)
+     └─ transaction   uma linha do extrato
+```
+
+A ingestão percorre exatamente essa hierarquia: para cada item, busca as contas;
+para cada conta, pagina as transações.
+
+### Instituições conectadas
+
+PicPay, Santander, Nubank, Inter e Rico Investimentos — mais 3 cartões de
+crédito, um deles vinculado à Rico. Os dados de investimento da Rico vêm num
+contexto separado (*Investments*) e são tratados como tal.
+
+### Endpoints usados
+
+```
+POST /auth                                  -> apiKey (validade ~2h)
+GET  /items                                 -> conexões autorizadas
+GET  /accounts?itemId=                      -> contas de um item
+GET  /transactions?accountId=&from=&page=   -> extrato, paginado
+GET  /investments?itemId=                   -> posição de investimentos
+```
+
+Host: `https://api.pluggy.ai`.
+
+---
+
+## 3. A arquitetura em três camadas
+
+O fluxo é o de um pipeline ELT clássico, adaptado para rodar na sua máquina:
+
+```
+                    API Pluggy
+                        │
+                        │  httpx, autenticação a cada execução, paginação
+                        ▼
+              ┌───────────────────┐
+              │     INGESTÃO      │   Python: busca e grava. Só isso.
+              │  (financas/*.py)  │   Achata o JSON aninhado em colunas planas
+              └─────────┬─────────┘
+                        │
+                        ▼
+     ┌──────────────────────────────────────┐
+     │  RAW      raw_transacoes  (evento)   │  Fiel à API. Nenhuma regra
+     │           raw_contas      (estado)   │  aplicada. Upsert idempotente
+     │           raw_investimentos (estado) │  por chave natural.
+     │           cfg_*  ◄───────────────────┼── espelho do regras.toml
+     └──────────────────┬───────────────────┘
+                        │
+                        │  SQL versionado
+                        ▼
+     ┌──────────────────────────────────────┐
+     │  STAGING  stg_transacoes             │  Limpeza, tipagem, dedup,
+     │           stg_contas                 │  marcação de ruído.
+     │           stg_investimentos          │
+     └──────────────────┬───────────────────┘
+                        │
+                        │  SQL versionado + tabelas cfg_*
+                        ▼
+     ┌──────────────────────────────────────┐
+     │  MARTS    gastos       ◄─────────────┼── contrato do futuro frontend
+     │           recorrencias               │
+     │           patrimonio                 │
+     └──────────────────────────────────────┘
+```
+
+### As views
+
+| View | Grão | Responde |
+|---|---|---|
+| `stg_transacoes` | transação | *por que* essa transação foi excluída — três bandeiras, uma por armadilha |
+| `stg_contas` | conta × dia | retratos, com o mais recente sinalizado |
+| `stg_investimentos` | posição × dia | idem, para investimentos |
+| **`gastos`** | transação | quanto gastei, por mês, categoria, estabelecimento |
+| **`recorrencias`** | assinatura | o que é assinatura ativa e quanto custa por ano |
+| **`patrimonio`** | instituição × dia | como o patrimônio evoluiu |
+
+O staging **marca**, o mart **decide**. Uma transação excluída não desaparece:
+ela continua em `stg_transacoes` com a bandeira que a tirou, então "por que esse
+gasto sumiu do meu total?" se responde com um `SELECT`, não caçando um `WHERE`.
+
+Duas escolhas em `gastos` que evitam erro recorrente:
+
+- **`valor` é positivo.** Na raw um gasto é `-100`, porque é assim que a API
+  manda. Somar despesa negativa é fonte constante de erro de sinal; a inversão
+  acontece uma vez só, na view.
+- **`ano` e `mes` separados, via `EXTRACT`.** `date_trunc` tem assinatura
+  diferente no BigQuery, e a migração está no radar.
+
+O grão é a transação, e não um agregado mensal: agregar depois é trivial, o
+caminho inverso é impossível.
+
+### Por que três camadas e não uma
+
+A tentação é fazer o Python já gravar tudo limpo, numa tabela só. O problema é
+que **toda limpeza é uma decisão discutível**, e decisões mudam.
+
+Exemplo concreto: você decide que "pagamento de fatura" não é gasto e filtra
+isso na ingestão. Três meses depois descobre que o Santander escreve
+`PAGTO CARTAO` e não `PAGAMENTO DE FATURA` — seu filtro nunca pegou nada. Se o
+filtro estava na ingestão, o dado se perdeu e é preciso reingerir tudo. Se
+estava numa view, você corrige o SQL e roda de novo: **os dados brutos nunca
+saíram do lugar**.
+
+É por isso que:
+
+- **raw** guarda o que a API devolveu, incluindo o JSON original completo numa
+  coluna `payload_json`. Se a Pluggy adicionar um campo que a normalização não
+  previu, ele continua recuperável sem reingestão.
+- **staging** faz o que é objetivamente certo: tipagem, deduplicação, datas.
+- **marts** é onde mora a opinião: o que conta como gasto, o que é assinatura.
+
+A ingestão é cara (rede, latência, consentimento que expira). A transformação é
+barata (SQL local, roda em segundos). Separar as duas significa que errar na
+parte barata custa barato.
+
+### Stack
+
+| Peça | Escolha | Por quê |
+|---|---|---|
+| Linguagem | Python 3.11+ | `tomllib` na biblioteca padrão |
+| HTTP | `httpx` | o SDK oficial da Pluggy é Node |
+| Banco | DuckDB | analítico, local, arquivo único, SQL próximo do padrão |
+| Testes | `pytest` | — |
+| ORM | nenhum | SQL direto; aqui o SQL *é* a regra de negócio |
+
+Migração futura para BigQuery está no radar, então as views de marts evitam
+construções exclusivas do DuckDB quando existe equivalente padrão. Na prática:
+`lower(x) LIKE lower(y)` em vez de `ILIKE`.
+
+---
+
+## 4. Os três princípios
+
+Tudo no projeto sai destes três. Quando houver dúvida de projeto, decida por eles.
+
+### 1. Idempotência acima de tudo
+
+Rodar a ingestão duas vezes seguidas não pode duplicar nem alterar nada. Isso
+não é preciosismo: consentimento de Open Finance expira, rede cai, e a chance de
+você rodar o mesmo comando duas vezes por insegurança é alta.
+
+A garantia vem do **upsert por chave natural**, nunca de um `INSERT` puro. O
+`itemId` não serve como chave de nada persistente, porque **uma reautorização
+gera um `itemId` novo** para a mesma instituição — ele é gravado como atributo,
+não como identidade.
+
+Qual é a chave natural depende da natureza do dado, e essa distinção é a decisão
+de modelagem mais importante do projeto:
+
+| Dado | Natureza | Chave | Por quê |
+|---|---|---|---|
+| Transação | **evento** | `id` | Aconteceu uma vez, tem id próprio e estável |
+| Conta | **estado** | `(id, data_posicao)` | O saldo de hoje não é o de ontem |
+| Investimento | **estado** | `(id, data_posicao)` | O CDB rende todo dia |
+
+Saldo e posição são fotografados uma vez por dia. Se a chave fosse só o `id`,
+cada ingestão sobrescreveria o retrato anterior e o banco guardaria **apenas
+hoje** — tornando impossível responder "qual a evolução do meu patrimônio ao
+longo do tempo?", que é um dos objetivos do projeto. E não dá para consertar
+depois: não se reconstrói um dado que nunca foi gravado.
+
+Duas colunas de controle completam o desenho:
+
+- **`ingerido_em`** é gravado uma vez e nunca mais tocado.
+- **`atualizado_em`** só se mexe quando o `payload_json` realmente muda.
+
+O segundo detalhe é o que dá sentido ao teste de idempotência. Se `atualizado_em`
+fosse carimbado a cada execução, a segunda rodada alteraria o banco e o teste
+passaria sem verificar nada de real.
+
+### 2. Raw é sagrado
+
+A camada raw é append-only lógico. Nada de negócio acontece ali. Se uma
+transação chegou torta da API, ela fica torta em raw e é consertada em staging.
+
+### 3. Regras de negócio em SQL, não em Python
+
+Python busca e grava. A lógica analítica vive em arquivos `.sql` versionados,
+que dá para abrir, ler e rodar isoladamente. Duas consequências práticas:
+
+- Revisar uma regra é ler um `SELECT`, não caçar um `if` no meio de um loop.
+- O futuro frontend consome as views. Se a regra estivesse em Python, o frontend
+  teria que reimplementá-la.
+
+---
+
+## 5. As armadilhas do domínio
+
+Nove delas já custaram tempo e são tratadas como requisito, não sugestão. Esta
+tabela é o mapa de onde cada uma é resolvida:
+
+| # | Armadilha | Por que morde | Onde é tratada |
+|---|---|---|---|
+| 1 | **Dupla contagem de cartão** | A compra aparece na conta `CREDIT`; o pagamento da fatura aparece **de novo** na conta `BANK`. Somar tudo dobra o gasto | `cfg_padroes_fatura` → `e_pagamento_de_fatura` |
+| 2 | **Transferência entre contas próprias** | Mover R$ 500 do Nubank para o Santander não é gasto, mas polui o total | `cfg_contrapartes_proprias` → `e_transferencia_propria` |
+| 3 | **Aporte não é despesa** | Investir não é gastar | `raw_investimentos` separada, **e** `cfg_padroes_aplicacao` → `e_aplicacao` |
+| 4 | **Consentimento expira** | O pipeline **não quebra**: ele silenciosamente para de trazer dados novos. Esse é o pior tipo de falha | [`frescor.py`](src/financas/frescor.py) + saída ≠ 0 |
+| 5 | **Latência de até 24h** | "Hoje" nunca está completo em conector regulado | tolerância configurável (`frescor_dias_padrao`) |
+| 6 | **`apiKey` vive ~2h** | Token velho falha no meio da execução | autentica a cada execução, nunca persiste o token |
+| 7 | **Paginação obrigatória** | Assumir que a página 1 é tudo perde histórico em silêncio | o cliente itera até acabar; há teste para isso |
+| 8 | **`itemId` muda** | Reautorizar gera um item novo para o mesmo banco | chave natural é o `id` da transação |
+| 9 | **Histórico começa ~2025-08** | Antes disso não há o que buscar | `data_inicial` no `regras.toml` |
+
+**Nenhum desses filtros é hardcoded.** As armadilhas 1 e 2 dependem do texto da
+descrição, que varia por instituição — e texto que varia por instituição é
+configuração, não código. Os padrões vivem no `regras.toml`, são carregados em
+tabelas `cfg_*` no DuckDB, e as views fazem `JOIN` contra elas. Mudar um filtro é
+editar o TOML e rodar `python -m financas views`, sem reingerir nada.
+
+Uma sutileza que já custou um bug: o campo `instituicao` das regras também é
+padrão LIKE, não igualdade. O `connector.name` da API nem sempre é o nome curto
+— a Rico vem como `"Rico Investimentos"`, então `instituicao = "rico"` não
+casaria com nada. Escreva `"rico%"`. Um filtro que nunca casa falha em silêncio,
+que é justamente o modo de falha que este projeto combate, então a configuração
+recusa padrão com maiúscula em vez de deixar passar.
+
+---
+
+## 6. Configuração: duas fontes, dois propósitos
+
+A separação é intencional e vale entender:
+
+| | `.env` | `config/regras.toml` |
+|---|---|---|
+| **Guarda** | segredos e caminhos | filtros de negócio |
+| **Exemplo** | `PLUGGY_CLIENT_SECRET`, caminho do banco | o que conta como pagamento de fatura |
+| **Depende de** | a máquina onde roda | como suas contas se comportam |
+| **Muda quando** | você troca de máquina | você descobre um padrão novo no extrato |
+| **Versionado?** | não (só `env.example`) | não (só `regras.example.toml`) |
+
+Ambos ficam fora do git, por motivos diferentes: o `.env` tem segredo, e o
+`regras.toml` identifica contas próprias por nome do titular e chave Pix — dado
+pessoal, que não pode entrar no repositório.
+
+Para começar:
+
+```bash
+cp env.example .env                                 # e preencha as credenciais
+cp config/regras.example.toml config/regras.toml    # e preencha suas chaves Pix
+```
+
+### Como a configuração é validada
+
+[`src/financas/config.py`](src/financas/config.py) segue três regras:
+
+**Falha cedo.** Um erro de configuração aparece antes de a primeira requisição
+sair, não no meio da ingestão.
+
+**Falha por inteiro.** Os problemas são acumulados e reportados de uma vez.
+Corrigir um `.env` uma variável por execução é irritante:
+
+```
+Configuração inválida:
+  - PLUGGY_CLIENT_ID é obrigatória com FINANCAS_MODO=online. Pegue em
+    dashboard.pluggy.ai > sua aplicação > credenciais e coloque no .env
+  - PLUGGY_CLIENT_SECRET é obrigatória com FINANCAS_MODO=online. (...)
+  - PLUGGY_API_URL deve começar com http:// ou https://, recebi 'api.pluggy.ai'
+  - FINANCAS_TIMEOUT deve ser maior que zero, recebi '-5'
+```
+
+**Falha dizendo o que fazer.** A mensagem aponta onde conseguir o valor, não só
+que ele falta.
+
+Detalhes menores, mas deliberados: credencial só é obrigatória no modo `online`
+(cobrar isso em `offline` atrapalha o desenvolvimento); `Configuracao.__repr__`
+esconde o secret, porque esse objeto acaba em log e em traceback; e o `.env` é
+lido por um parser de ~25 linhas em biblioteca padrão, em vez de uma dependência
+a mais.
+
+---
+
+## 7. Modo offline: desenvolver sem rede
+
+O projeto é desenvolvido num ambiente sandboxed, onde chamadas à API da Pluggy
+provavelmente são bloqueadas. Mas a restrição virou uma boa decisão de projeto.
+
+`FINANCAS_MODO` alterna entre duas implementações do **mesmo cliente**:
+
+| Modo | Implementação | Origem dos dados | Uso |
+|---|---|---|---|
+| `offline` (padrão) | `ClienteFixtures` | JSON em `tests/fixtures/pluggy/` | desenvolvimento e testes |
+| `online` | `ClienteHttp` | API real | ingestão de verdade, fora do sandbox |
+
+As duas cumprem o mesmo `Protocol`, e `criar_cliente()` é o único lugar do
+projeto que escolhe entre elas. O resto do pipeline recebe um `Cliente` pronto e
+não pergunta de onde vieram os dados — é isso que permite testar ingestão,
+upsert e views inteiras sem rede.
+
+As fixtures reproduzem o cenário real: 5 instituições, 8 contas (3 delas
+cartão), 27 transações e 2 investimentos. Cada armadilha tem um caso plantado
+ali — pagamento de fatura nos dois lados, Pix entre contas próprias, TED para a
+corretora, aporte em CDB, e o PicPay parado desde agosto para exercitar o
+detector de frescor.
+
+Os testes usam **exclusivamente** dados sintéticos: titular "Fulano de Tal", CPF
+`12345678909`, telefone `31900001111` — todos inventados. Nenhum teste depende
+de rede, credencial ou do seu extrato. Um teste verifica isso explicitamente,
+falhando se um valor real vazar para dentro de `tests/fixtures/`.
+
+O `ClienteHttp` é testado com `httpx.MockTransport`: as requisições são
+construídas e roteadas de verdade, mas nenhum socket é aberto. É assim que
+paginação, retry, reautenticação e tradução de erro têm cobertura sem rede.
+
+### O que garante que os dois modos não divergem
+
+Se o cliente offline se comportasse diferente do real, o modo offline estaria
+testando outro programa — e a confiança no desenvolvimento sem rede seria
+falsa. Três testes fecham essa porta:
+
+- **Uma API falsa serve as fixtures por HTTP**, com páginas de 2 registros, e o
+  pipeline inteiro roda por ela. São mais de 20 requisições reais atravessando
+  `/auth`, paginação, normalização, upsert e views.
+- **Um teste de contrato** roda o pipeline duas vezes, uma por cada cliente, e
+  compara `SELECT *` das duas camadas raw. Qualquer divergência falha.
+- **Um invariante de conservação** verifica que a soma dos débitos fecha:
+  `gastos + excluídos == total`. Sobrar significa dado perdido; faltar,
+  dado contado duas vezes.
+
+Há ainda uma **guarda estrutural** contra o filtro hardcoded: nenhum `.sql`
+versionado pode conter `LIKE '...'` com literal, nem citar nome de instituição
+fora de comentário. Um `LIKE '%fatura%'` escrito direto na view passaria em todos
+os testes de comportamento e ainda assim quebraria a promessa do projeto — só
+apareceria no dia em que o Santander mudasse a redação.
+
+---
+
+## 8. Estrutura de diretórios
+
+O repositório está dividido em duas fases: `backend/` (fase 1, completa) e
+`frontend/` (fase 3, ainda vazia). **Todo comando abaixo roda de dentro de
+`backend/`** — `pythonpath`, `testpaths` e `raiz_do_projeto()` são relativos a
+ele. O pacote se chama `financas`, e é assim que se importa, sempre:
+`from financas.config import ...`.
+
+```
+where_is_the_money/
+├─ CLAUDE.md                     # escopo, restrições e decisões (raiz do repo)
+├─ frontend/                     # fase 3, vazia
+└─ backend/
+   ├─ README.md                  # este arquivo
+   ├─ pyproject.toml             # deps e configuração do pytest
+   ├─ env.example                # variáveis de ambiente (só placeholders)
+   │
+   ├─ config/
+   │  └─ regras.example.toml     # filtros das armadilhas 1, 2, 3 e 4
+   │
+   ├─ src/financas/
+   │  ├─ config.py               # lê .env + regras.toml, valida, falha cedo
+   │  ├─ pluggy/
+   │  │  ├─ cliente.py           # auth, erros HTTP, retry, paginação
+   │  │  └─ fixtures.py          # cliente offline: mesma interface, lê do disco
+   │  ├─ persistencia/
+   │  │  ├─ banco.py             # conexão DuckDB, DDL, upsert idempotente
+   │  │  └─ schema.sql           # DDL de raw_* e cfg_*
+   │  ├─ normalizacao.py         # achata o JSON aninhado em colunas planas
+   │  ├─ ingestao.py             # orquestra items → accounts → transactions
+   │  ├─ frescor.py              # detecta instituição que parou de atualizar
+   │  ├─ views.py                # aplica os .sql na ordem certa
+   │  └─ cli.py                  # argparse: ingerir | frescor | views | status
+   │
+   ├─ sql/
+   │  ├─ staging/                # 01_stg_transacoes, 02_stg_contas, 03_stg_investimentos
+   │  └─ marts/                  # 01_gastos, 02_recorrencias, 03_patrimonio
+   │
+   └─ tests/
+      ├─ conftest.py             # banco em memória, relógio falso, cliente offline
+      ├─ fixtures/pluggy/        # JSONs sintéticos
+      ├─ test_config.py          # validação e mensagens de erro
+      ├─ test_cliente.py         # auth, paginação, retry, erros HTTP
+      ├─ test_normalizacao.py    # achatamento e conversões
+      ├─ test_persistencia.py    # idempotência do upsert
+      ├─ test_ingestao.py        # travessia e isolamento de falha
+      ├─ test_frescor.py         # armadilha 4
+      ├─ test_views.py           # as armadilhas 1, 2 e 3 nas views
+      ├─ test_cli.py             # subcomandos e códigos de saída
+      └─ test_ponta_a_ponta.py   # o pipeline inteiro, pela API HTTP
+```
+
+---
+
+## 9. Como rodar
+
+Tudo a partir de `backend/`.
+
+```bash
+# 1. Dependências
+pip install -e ".[dev]"
+
+# 2. Configuração local (nenhum dos dois vai para o git)
+cp env.example .env
+cp config/regras.example.toml config/regras.toml
+
+# 3. Testes — não precisam de rede nem de credencial
+python -m pytest
+```
+
+### Comandos
+
+```bash
+python -m financas ingerir     # baixa e grava na camada raw
+python -m financas views       # recarrega cfg_* e aplica os .sql
+python -m financas frescor     # alguém parou de trazer dado novo?
+python -m financas status      # o que existe no banco
+```
+
+Flags globais: `--modo online|offline`, `--banco CAMINHO`, `-v` (ou `-vv`).
+`ingerir` aceita `--desde` e `--hoje`; `frescor`, `--hoje`.
+
+### Códigos de saída
+
+Pensados para `cron` e script, onde ninguém lê a saída na hora:
+
+| Código | Significado |
+|---|---|
+| `0` | tudo certo |
+| `1` | configuração inválida, uso errado, falha inesperada |
+| `2` | **alguma instituição parou de atualizar** (armadilha 4) |
+| `3` | ingestão parcial: pelo menos uma instituição falhou |
+
+Os códigos 2 e 3 são o ponto da armadilha 4: o pipeline que "funciona" mas
+parou de trazer dado precisa gritar, não passar batido.
+
+---
+
+## Estado atual
+
+O backend está sendo construído em incrementos revisáveis, nesta ordem:
+
+| # | Etapa | Situação |
+|---|---|---|
+| a | **Configuração** — env + regras, validação, `env.example` | ✅ concluída |
+| b | **Cliente Pluggy** — auth, erro HTTP, paginação, modo offline | ✅ concluída |
+| c | **Persistência** — schema DuckDB e upsert idempotente | ✅ concluída |
+| d | **CLI** — `ingerir`, `views`, `frescor`, `status` | ✅ concluída |
+| e | **Views SQL** — `gastos`, `recorrencias`, `patrimonio` | ✅ concluída |
+| f | **Testes de ponta a ponta** — armadilhas 1, 2, 3 e 7 | ✅ concluída |
+
+**224 testes passando**, nenhum tocando rede ou credencial.
+
+A fase 1 está completa. O backend ingere, persiste, transforma e responde —
+falta rodar contra a API real, o que é feito fora deste ambiente.
+
+- [`config.py`](src/financas/config.py) — configuração e regras
+- [`pluggy/cliente.py`](src/financas/pluggy/cliente.py) · [`pluggy/fixtures.py`](src/financas/pluggy/fixtures.py) — API real e offline
+- [`normalizacao.py`](src/financas/normalizacao.py) — achatamento do JSON
+- [`persistencia/schema.sql`](src/financas/persistencia/schema.sql) · [`persistencia/banco.py`](src/financas/persistencia/banco.py) — DDL e upsert
+- [`ingestao.py`](src/financas/ingestao.py) — travessia e isolamento de falha
+- [`frescor.py`](src/financas/frescor.py) — detector da armadilha 4
+- [`views.py`](src/financas/views.py) · [`cli.py`](src/financas/cli.py) — orquestração
+- [`sql/staging/`](sql/staging/) · [`sql/marts/`](sql/marts/) — as 6 views
+
+Tudo que a seção 8 descreve existe no disco. A `frontend/` na raiz está vazia
+de propósito: é a fase 3.
+
+### O tamanho do problema, em números
+
+Rodando as views contra as fixtures sintéticas:
+
+```
+débito bruto na camada raw : R$ 8.735,05
+gasto real (view gastos)   : R$ 1.434,75
+ruído removido             : R$ 7.300,30   — 84% do total
+```
+
+Sem os filtros das armadilhas 1, 2 e 3, o relatório mostraria **seis vezes** o
+gasto real. Não é margem de erro: é a diferença entre um número útil e um número
+inventado.
+
+### Lacunas conhecidas
+
+- **Um item por instituição é uma suposição.** O conector MeuPluggy pode
+  devolver um único item agregando tudo. As fixtures assumem cinco itens; se a
+  API real fizer diferente, mudam as fixtures, não o código — a ingestão percorre
+  `items → accounts` de qualquer jeito.
+- **Transferência via TED entre contas próprias** só é pega pelo nome do
+  titular. Se o extrato de alguma instituição não trouxer o nome, escapa.
+- **`patrimonio` assume que `balance` de conta `CREDIT` é positivo** e representa
+  o valor devido. Se alguma instituição devolver negativo, o sinal inverte e o
+  patrimônio fica inflado. Conferir na primeira ingestão real.
+- **Os padrões de `regras.toml` são um chute informado.** Só o extrato real dirá
+  se o Santander escreve `PAGTO CARTAO` ou outra coisa. `stg_transacoes` existe
+  justamente para auditar isso: as bandeiras mostram o que cada filtro pegou.
+
+### Antes da primeira ingestão real
+
+Três coisas dependem de você, não de código:
+
+1. **Rotacionar o `PLUGGY_CLIENT_SECRET`** no dashboard.pluggy.ai. Ele esteve
+   num `env.example`, arquivo destinado a versionamento.
+2. **Preencher `config/regras.toml`** com as demais chaves Pix e conferir como o
+   seu nome sai no extrato. Sem isso a armadilha 2 fica meio tratada.
+3. **Conferir os padrões de fatura** contra as descrições reais. `stg_transacoes`
+   foi feita para isso:
+
+```sql
+-- o que cada filtro pegou
+SELECT instituicao, descricao, valor, e_pagamento_de_fatura,
+       e_transferencia_propria, e_aplicacao
+FROM stg_transacoes
+WHERE e_pagamento_de_fatura OR e_transferencia_propria OR e_aplicacao;
+
+-- e, mais importante, o que escapou
+SELECT instituicao, descricao, valor FROM gastos
+WHERE lower(descricao) LIKE '%pix%' OR lower(descricao) LIKE '%ted%'
+   OR lower(descricao) LIKE '%fatura%'
+ORDER BY valor DESC;
+```
+
+A segunda consulta é a que revela filtro faltando: transferência ou fatura que
+sobrou em `gastos` é padrão que ninguém escreveu ainda.
+
+### Roadmap depois desta fase
+
+- **Fase 2:** categorização própria, sobreposta à categoria que a Pluggy devolve
+- **Fase 3:** frontend consumindo as views
+- **Fase 4 (talvez):** migração para GCP com execução agendada

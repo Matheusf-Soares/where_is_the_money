@@ -1,0 +1,50 @@
+{
+  "_comentario": "Armadilha 3: isto nunca pode ser somado como despesa. Vive em raw_investimentos, tabela separada.",
+  "results": [
+    {
+      "id": "inv-rico-cdb-01",
+      "itemId": "item-rico",
+      "name": "CDB Banco Exemplo 110% CDI",
+      "number": "CDB-2025-0001",
+      "type": "FIXED_INCOME",
+      "subtype": "CDB",
+      "currencyCode": "BRL",
+      "issuer": "Banco Exemplo SA",
+      "issueDate": "2025-09-16T00:00:00.000Z",
+      "dueDate": "2027-09-16T00:00:00.000Z",
+      "rate": 110.0,
+      "rateType": "CDI",
+      "balance": 2012.35,
+      "value": 2000.00,
+      "quantity": 1,
+      "amount": 2000.00,
+      "amountProfit": 12.35,
+      "amountOriginal": 2000.00,
+      "date": "2025-09-30T00:00:00.000Z",
+      "status": "ACTIVE"
+    },
+    {
+      "id": "inv-rico-tesouro-01",
+      "itemId": "item-rico",
+      "name": "Tesouro Selic 2029",
+      "number": "TD-2025-0002",
+      "type": "FIXED_INCOME",
+      "subtype": "TREASURY",
+      "currencyCode": "BRL",
+      "issuer": "Tesouro Nacional",
+      "issueDate": "2025-08-20T00:00:00.000Z",
+      "dueDate": "2029-03-01T00:00:00.000Z",
+      "balance": 5180.44,
+      "value": 5000.00,
+      "quantity": 32.5,
+      "amount": 5000.00,
+      "amountProfit": 180.44,
+      "amountOriginal": 5000.00,
+      "date": "2025-09-30T00:00:00.000Z",
+      "status": "ACTIVE"
+    }
+  ],
+  "page": 1,
+  "total": 2,
+  "totalPages": 1
+}

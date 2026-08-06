@@ -1,0 +1,87 @@
+{
+  "results": [
+    {
+      "id": "tx-in-b-01",
+      "accountId": "conta-inter-bank",
+      "description": "Pix recebido 31900001111",
+      "descriptionRaw": "PIX RECEBIDO",
+      "amount": 300.00,
+      "currencyCode": "BRL",
+      "date": "2025-09-07T00:00:00.000Z",
+      "type": "CREDIT",
+      "status": "POSTED",
+      "balance": 2090.12,
+      "category": "Transfers",
+      "categoryId": "06000000",
+      "paymentData": {
+        "paymentMethod": "PIX",
+        "payer": {
+          "name": "FULANO DE TAL",
+          "documentNumber": {"type": "CPF", "value": "12345678909"}
+        },
+        "receiver": {
+          "name": "FULANO DE TAL",
+          "documentNumber": {"type": "CPF", "value": "12345678909"},
+          "pixKey": "31900001111"
+        }
+      }
+    },
+    {
+      "id": "tx-in-b-02",
+      "accountId": "conta-inter-bank",
+      "description": "Pagamento Fatura Cartao Inter",
+      "descriptionRaw": "PAGAMENTO FATURA CARTAO",
+      "amount": -410.00,
+      "currencyCode": "BRL",
+      "date": "2025-09-14T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 1580.22,
+      "category": "Credit card payment",
+      "categoryId": "07000000"
+    },
+    {
+      "id": "tx-in-b-03",
+      "accountId": "conta-inter-bank",
+      "description": "Academia Smart Fit",
+      "descriptionRaw": "SMART FIT ESCOLA DE GINASTICA",
+      "amount": -99.90,
+      "currencyCode": "BRL",
+      "date": "2025-09-02T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 1790.12,
+      "category": "Gym",
+      "categoryId": "05060000",
+      "merchant": {
+        "name": "Smart Fit",
+        "businessName": "SMART FIT ESCOLA DE GINASTICA E DANCA SA",
+        "cnpj": "07594978000178",
+        "category": "Gym"
+      }
+    },
+    {
+      "id": "tx-in-b-04",
+      "accountId": "conta-inter-bank",
+      "description": "Academia Smart Fit",
+      "descriptionRaw": "SMART FIT ESCOLA DE GINASTICA",
+      "amount": -99.90,
+      "currencyCode": "BRL",
+      "date": "2025-08-02T00:00:00.000Z",
+      "type": "DEBIT",
+      "status": "POSTED",
+      "balance": 1890.02,
+      "category": "Gym",
+      "categoryId": "05060000",
+      "merchant": {
+        "name": "Smart Fit",
+        "businessName": "SMART FIT ESCOLA DE GINASTICA E DANCA SA",
+        "cnpj": "07594978000178",
+        "category": "Gym"
+      }
+    }
+  ],
+  "page": 1,
+  "total": 4,
+  "totalPages": 1
+}
