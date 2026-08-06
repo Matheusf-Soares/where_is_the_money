@@ -78,6 +78,50 @@ def test_diagnostico_de_lista_vazia_explica_os_dois_portais(capsys, tmp_path, pr
     assert "meu.pluggy.ai" in erro
 
 
+def test_flag_global_vale_depois_do_subcomando(ambiente, projeto, capsys) -> None:
+    """`financas ingerir --modo offline` é a ordem natural em CLI moderna.
+
+    O argparse, sozinho, só aceita opção global ANTES do subcomando e responde
+    "unrecognized arguments" — erro que não sugere a correção e que se erra
+    várias vezes seguidas antes de desconfiar da ordem.
+    """
+    codigo = rodar(
+        ["ingerir", "--modo", "offline", "--hoje", "2025-09-20"], ambiente, projeto
+    )
+
+    assert codigo == SAIDA_OK
+    assert "modo offline" in capsys.readouterr().out
+
+
+def test_flag_global_antes_nao_e_sobrescrita(ambiente, projeto, capsys) -> None:
+    """A armadilha de repetir opção com `parents`.
+
+    Sem `SUPPRESS`, a flag não informada depois do subcomando gravaria o
+    próprio default por cima do valor que veio antes — e `--modo online
+    ingerir` voltaria para offline em silêncio, que é o pior desfecho possível
+    para uma flag que decide se o pipeline toca a rede.
+    """
+    codigo = rodar(["--modo", "offline", "ingerir", "--hoje", "2025-09-20"], ambiente, projeto)
+
+    assert codigo == SAIDA_OK
+    assert "modo offline" in capsys.readouterr().out
+
+
+def test_as_duas_ordens_produzem_o_mesmo_banco(ambiente, projeto, tmp_path) -> None:
+    antes = dict(ambiente, FINANCAS_BANCO=str(tmp_path / "antes.duckdb"))
+    depois = dict(ambiente, FINANCAS_BANCO=str(tmp_path / "depois.duckdb"))
+
+    rodar(["--modo", "offline", "ingerir", "--hoje", "2025-09-20"], antes, projeto)
+    rodar(["ingerir", "--modo", "offline", "--hoje", "2025-09-20"], depois, projeto)
+
+    import duckdb
+
+    conta = lambda caminho: duckdb.connect(caminho, read_only=True).execute(  # noqa: E731
+        "SELECT count(*) FROM raw_transacoes"
+    ).fetchone()
+    assert conta(str(tmp_path / "antes.duckdb")) == conta(str(tmp_path / "depois.duckdb"))
+
+
 def test_pyproject_declara_como_instalar() -> None:
     """Sem `[build-system]`, `pip install -e .` fica a cargo do palpite do pip."""
     import tomllib

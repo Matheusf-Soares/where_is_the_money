@@ -386,32 +386,61 @@ def comando_status(argumentos: argparse.Namespace, config: Configuracao) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _declarar_globais(alvo: argparse.ArgumentParser, *, suprimir: bool) -> None:
+    """Declara as flags globais num analisador.
+
+    `suprimir` marca a cópia que vive nos subcomandos. Sem `SUPPRESS`, a flag
+    não informada depois do subcomando gravaria o próprio default por cima do
+    valor que veio antes dele, e `financas --modo online ingerir` voltaria
+    silenciosamente para offline. Esse é o motivo de o padrão argparse não ser
+    simplesmente copiar as opções.
+    """
+    padrao_contagem = argparse.SUPPRESS if suprimir else 0
+    padrao = argparse.SUPPRESS if suprimir else None
+
+    alvo.add_argument(
+        "-v",
+        "--verboso",
+        action="count",
+        default=padrao_contagem,
+        help="mais detalhe no log (-vv para depuração)",
+    )
+    alvo.add_argument(
+        "--banco",
+        type=Path,
+        default=padrao,
+        help="caminho do arquivo DuckDB (sobrescreve FINANCAS_BANCO)",
+    )
+    alvo.add_argument(
+        "--modo",
+        choices=("offline", "online"),
+        default=padrao,
+        help="fonte dos dados (sobrescreve FINANCAS_MODO)",
+    )
+
+
 def construir_analisador() -> argparse.ArgumentParser:
     analisador = argparse.ArgumentParser(
         prog="financas",
         description="Pipeline de ingestão e análise de gastos via Open Finance.",
+        epilog="As flags globais valem antes ou depois do subcomando: "
+        "'financas --modo online ingerir' e 'financas ingerir --modo online' "
+        "são equivalentes.",
     )
-    analisador.add_argument(
-        "-v",
-        "--verboso",
-        action="count",
-        default=0,
-        help="mais detalhe no log (-vv para depuração)",
-    )
-    analisador.add_argument(
-        "--banco",
-        type=Path,
-        help="caminho do arquivo DuckDB (sobrescreve FINANCAS_BANCO)",
-    )
-    analisador.add_argument(
-        "--modo",
-        choices=("offline", "online"),
-        help="fonte dos dados (sobrescreve FINANCAS_MODO)",
-    )
+    _declarar_globais(analisador, suprimir=False)
+
+    # As mesmas flags, repetidas em cada subcomando via `parents`. O argparse
+    # padrão só aceita opção global ANTES do subcomando, e digitar
+    # `financas ingerir --modo online` — que é a ordem natural em quase toda
+    # CLI moderna — falharia com "unrecognized arguments".
+    globais = argparse.ArgumentParser(add_help=False)
+    _declarar_globais(globais, suprimir=True)
 
     sub = analisador.add_subparsers(dest="comando", required=True)
 
-    ingerir_ = sub.add_parser("ingerir", help="baixa da API e grava na camada raw")
+    ingerir_ = sub.add_parser(
+        "ingerir", help="baixa da API e grava na camada raw", parents=[globais]
+    )
     ingerir_.add_argument(
         "--desde",
         type=_data,
@@ -422,12 +451,18 @@ def construir_analisador() -> argparse.ArgumentParser:
     )
     ingerir_.set_defaults(executar=comando_ingerir)
 
-    views_ = sub.add_parser("views", help="recarrega cfg_* e aplica as views SQL")
+    views_ = sub.add_parser(
+        "views",
+        help="recarrega cfg_* e aplica as views SQL",
+        parents=[globais],
+    )
     views_.add_argument("--sql", type=Path, help="diretório das views (padrão: sql/)")
     views_.set_defaults(executar=comando_views)
 
     frescor_ = sub.add_parser(
-        "frescor", help="verifica se alguma instituição parou de atualizar"
+        "frescor",
+        help="verifica se alguma instituição parou de atualizar",
+        parents=[globais],
     )
     frescor_.add_argument(
         "--hoje", type=_data, help="data de referência (padrão: hoje)"
@@ -435,7 +470,9 @@ def construir_analisador() -> argparse.ArgumentParser:
     frescor_.set_defaults(executar=comando_frescor)
 
     publicar_ = sub.add_parser(
-        "publicar", help="exporta as views para o frontend estático"
+        "publicar",
+        help="exporta as views para o frontend estático",
+        parents=[globais],
     )
     publicar_.add_argument(
         "--frontend", type=Path, help="raiz do frontend (padrão: ../frontend)"
@@ -454,7 +491,9 @@ def construir_analisador() -> argparse.ArgumentParser:
     publicar_.set_defaults(executar=comando_publicar)
 
     categorias_ = sub.add_parser(
-        "categorias", help="gera o de-para da fase 2, ou audita o que já existe"
+        "categorias",
+        help="gera o de-para da fase 2, ou audita o que já existe",
+        parents=[globais],
     )
     categorias_.add_argument(
         "--sincronizar",
@@ -468,7 +507,9 @@ def construir_analisador() -> argparse.ArgumentParser:
     )
     categorias_.set_defaults(executar=comando_categorias)
 
-    status_ = sub.add_parser("status", help="resumo do que existe no banco")
+    status_ = sub.add_parser(
+        "status", help="resumo do que existe no banco", parents=[globais]
+    )
     status_.set_defaults(executar=comando_status)
 
     return analisador
