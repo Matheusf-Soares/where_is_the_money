@@ -21,7 +21,42 @@ from financas.cli import (
     main,
 )
 
-from conftest import FIXTURES_PLUGGY
+from conftest import FIXTURES_PLUGGY, RAIZ
+
+
+# ---------------------------------------------------------------------------
+# Empacotamento
+#
+# O que estes dois testes protegem não é código, é a instalação. `python -m
+# financas` só encontra o pacote depois de `pip install -e .`, e o
+# `pythonpath = ["src"]` do pyproject vale **só para o pytest** — a suíte
+# inteira passava enquanto o comando documentado no README morria com
+# "No module named financas".
+# ---------------------------------------------------------------------------
+
+
+def test_pyproject_declara_como_instalar() -> None:
+    """Sem `[build-system]`, `pip install -e .` fica a cargo do palpite do pip."""
+    import tomllib
+
+    pyproject = tomllib.loads((RAIZ / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["build-system"]["build-backend"] == "setuptools.build_meta"
+    assert pyproject["tool"]["setuptools"]["packages"]["find"]["where"] == ["src"]
+
+
+def test_ponto_de_entrada_do_executavel_existe() -> None:
+    """`[project.scripts]` aponta para uma string; um erro de digitação ali só
+    apareceria na hora de rodar `financas`, fora de qualquer teste."""
+    import tomllib
+
+    pyproject = tomllib.loads((RAIZ / "pyproject.toml").read_text(encoding="utf-8"))
+    alvo = pyproject["project"]["scripts"]["financas"]
+    modulo, _, funcao = alvo.partition(":")
+
+    importado = __import__(modulo, fromlist=[funcao])
+
+    assert callable(getattr(importado, funcao))
 
 
 @pytest.fixture

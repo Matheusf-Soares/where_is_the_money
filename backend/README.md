@@ -457,7 +457,9 @@ where_is_the_money/
 Tudo a partir de `backend/`.
 
 ```bash
-# 1. Dependências
+# 1. Dependências — o -e não é opcional: é ele que põe `financas` no path.
+#    Sem isso, `python -m financas` falha com "No module named financas",
+#    porque o pythonpath do pyproject.toml vale só para o pytest.
 pip install -e ".[dev]"
 
 # 2. Configuração local (nenhum dos dois vai para o git)

@@ -274,13 +274,24 @@ errado. Prefira sempre falhar alto a passar batido.
 Tudo a partir de `backend/`.
 
 ```bash
-pip install -e ".[dev]"
+cd backend
+pip install -e ".[dev]"                             # OBRIGATÓRIO, veja abaixo
 
 cp env.example .env                                 # preencha as credenciais
 cp config/regras.example.toml config/regras.toml    # preencha suas chaves Pix
 
-python -m pytest                                    # 224 testes, sem rede
+python -m pytest                                    # 276 testes, sem rede
 ```
+
+⚠️ **O `pip install -e .` não é opcional.** Sem ele, `python -m financas`
+falha com `No module named financas`. O `pythonpath = ["src"]` do
+`pyproject.toml` é configuração **do pytest** — ele faz a suíte passar e não
+põe nada no path do `python -m`. Se o comando falhar, é quase sempre isto:
+o install não foi feito, ou foi feito de fora de `backend/`.
+
+Depois do install, os comandos rodam **de qualquer diretório**
+(`raiz_do_projeto()` se resolve pelo `__file__`), e existe também o atalho
+`financas ingerir` sem o `python -m`.
 
 ### Comandos
 

@@ -475,5 +475,14 @@ def _configurar_log(verbosidade: int) -> None:
     )
 
 
+def main_console() -> None:  # pragma: no cover
+    """Ponto de entrada do executável `financas`, declarado no pyproject.
+
+    Existe porque `[project.scripts]` espera uma função que não devolve valor:
+    quem sai com código é o `sys.exit`.
+    """
+    sys.exit(main())
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
