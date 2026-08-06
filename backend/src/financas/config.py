@@ -28,6 +28,10 @@ MODOS_VALIDOS = (MODO_OFFLINE, MODO_ONLINE)
 
 TIPOS_DE_CONTRAPARTE = ("titular", "chave_pix", "contraparte")
 
+# As três bandeiras de ruído de `stg_transacoes`, na ordem das armadilhas 1, 2
+# e 3. A categoria da Pluggy pode reforçar qualquer uma delas.
+BANDEIRAS_DE_RUIDO = ("fatura", "transferencia_propria", "aplicacao")
+
 # Rótulos de quem não casou com nenhuma regra nem com o de-para. São rótulo, e
 # não NULL, de propósito: NULL some de JOIN e de filtro sem avisar, e gasto que
 # desaparece em silêncio é o modo de falha que este projeto combate. Ficam em
@@ -138,6 +142,25 @@ class MapaDeCategoria:
 
 
 @dataclass(frozen=True)
+class CategoriaDeRuido:
+    """Categoria da Pluggy que reforça uma das bandeiras de ruído.
+
+    A Pluggy já classifica nativamente `Credit card payment`,
+    `Same person transfer` e `Investments` — exatamente as armadilhas 1, 2 e 3.
+    Usar isso como sinal **complementar** ao texto cobre a redação que nenhum
+    padrão previu, sem abrir mão do filtro por texto: categorização por ML erra,
+    e o texto pega o que ela errar. Marcar é um OR, nunca uma substituição.
+
+    `padrao` casa contra `lower(categoria)`, e `bandeira` diz qual das três
+    reforçar (ver `BANDEIRAS_DE_RUIDO`).
+    """
+
+    bandeira: str
+    padrao: str
+    observacao: str = ""
+
+
+@dataclass(frozen=True)
 class Regras:
     """Conteúdo validado de `config/regras.toml`."""
 
@@ -153,6 +176,7 @@ class Regras:
     limites_frescor: tuple[LimiteFrescor, ...] = ()
     categorias: tuple[RegraDeCategoria, ...] = ()
     mapa_categorias: tuple[MapaDeCategoria, ...] = ()
+    categorias_de_ruido: tuple[CategoriaDeRuido, ...] = ()
 
     # Não há um `dias_de_frescor()` aqui de propósito. Decidir o que está velho é
     # regra de negócio, e regra de negócio mora no SQL — neste caso na consulta
@@ -323,6 +347,7 @@ def carregar_regras(caminho: Path) -> Regras:
 
     categorias = _regras_de_categoria(dados, caminho, problemas)
     mapa = _mapa_de_categorias(dados, caminho, problemas)
+    ruido = _categorias_de_ruido(dados, caminho, problemas)
 
     categoria_padrao = _rotulo_de_geral(
         geral, "categoria_padrao", CATEGORIA_PADRAO, caminho, problemas
@@ -347,6 +372,7 @@ def carregar_regras(caminho: Path) -> Regras:
         limites_frescor=tuple(limites),
         categorias=tuple(categorias),
         mapa_categorias=tuple(mapa),
+        categorias_de_ruido=tuple(ruido),
     )
 
 
@@ -613,6 +639,36 @@ def _mapa_de_categorias(
             )
 
     return mapa
+
+
+def _categorias_de_ruido(
+    dados: dict, caminho: Path, problemas: list[str]
+) -> list[CategoriaDeRuido]:
+    """Lê `[[categoria_ruido]]`: a categoria da Pluggy reforçando uma bandeira."""
+    lista: list[CategoriaDeRuido] = []
+
+    for indice, bruto in enumerate(
+        _lista_de_tabelas(dados, "categoria_ruido", caminho, problemas)
+    ):
+        rotulo = f"{caminho}: [[categoria_ruido]] #{indice + 1}"
+
+        bandeira = _texto(bruto, "bandeira", rotulo, problemas)
+        padrao = _texto(bruto, "padrao", rotulo, problemas)
+        _exigir_minusculas(padrao, "padrao", rotulo, problemas)
+
+        if bandeira and bandeira not in BANDEIRAS_DE_RUIDO:
+            problemas.append(
+                f"{rotulo}: bandeira deve ser uma de {list(BANDEIRAS_DE_RUIDO)}, "
+                f"recebi {bandeira!r}"
+            )
+            continue
+
+        if bandeira and padrao:
+            lista.append(
+                CategoriaDeRuido(bandeira, padrao, str(bruto.get("observacao", "")))
+            )
+
+    return lista
 
 
 def _rotulo_de_geral(

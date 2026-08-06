@@ -234,6 +234,42 @@ grupo = "Fixo"
 # atribuir é grupo que vai ficar inconsistente ao longo dos meses.
 
 
+# --- Reforço das armadilhas 1, 2 e 3 pela categoria da Pluggy ------------
+#
+# A taxonomia da Pluggy já tem categorias nativas que são exatamente as três
+# armadilhas: `Credit card payment`, `Same person transfer` e `Investments`.
+#
+# Estes padrões são somados por OR ao filtro de texto, nunca no lugar dele.
+# Categorização por ML erra, e o texto pega o que ela errar; se a feature de
+# categorização estiver desligada na sua conta, a categoria vem nula e só o
+# texto atua. Duas redes, cada uma com um buraco diferente.
+#
+# `bandeira` é uma de: fatura | transferencia_propria | aplicacao
+# `padrao` casa contra a categoria em minúsculas.
+
+[[categoria_ruido]]
+bandeira = "fatura"
+padrao = "credit card payment"
+observacao = "Categoria nativa da Pluggy, nível 2 sob Transfers."
+
+[[categoria_ruido]]
+bandeira = "transferencia_propria"
+padrao = "same person transfer%"
+observacao = "Pega os filhos também: Cash, PIX e TED. Não depende da sua lista de chaves."
+
+[[categoria_ruido]]
+bandeira = "aplicacao"
+padrao = "investments"
+
+[[categoria_ruido]]
+bandeira = "aplicacao"
+padrao = "automatic investment"
+
+# CONFERIR na primeira ingestão real: se a categorização estiver desligada na
+# sua conta Pluggy, nenhum destes vai casar nada — e o comando
+# `python -m financas categorias` vai acusar exatamente isso.
+
+
 # --- Camada 2: de-para do categoryId da Pluggy ---------------------------
 #
 # Rede de segurança: pega o que nenhuma regra de texto pegou. Casa por

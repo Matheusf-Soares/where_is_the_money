@@ -1,0 +1,17 @@
+[
+  { "id": "01000000", "description": "Income", "descriptionTranslated": "Receita" },
+  { "id": "04000000", "description": "Transportation", "descriptionTranslated": "Transporte" },
+  { "id": "04030000", "description": "Gas station", "descriptionTranslated": "Posto de combustível", "parentId": "04000000", "parentDescription": "Transportation" },
+  { "id": "05000000", "description": "Shopping and services", "descriptionTranslated": "Compras e serviços" },
+  { "id": "05010000", "description": "Supermarket", "descriptionTranslated": "Supermercado", "parentId": "05000000", "parentDescription": "Shopping and services" },
+  { "id": "05020000", "description": "Food and drinks", "descriptionTranslated": "Alimentação", "parentId": "05000000", "parentDescription": "Shopping and services" },
+  { "id": "05030000", "description": "Food delivery", "descriptionTranslated": "Delivery", "parentId": "05000000", "parentDescription": "Shopping and services" },
+  { "id": "05050000", "description": "Healthcare", "descriptionTranslated": "Saúde", "parentId": "05000000", "parentDescription": "Shopping and services" },
+  { "id": "05060000", "description": "Gym", "descriptionTranslated": "Academia", "parentId": "05000000", "parentDescription": "Shopping and services" },
+  { "id": "05070000", "description": "Streaming", "descriptionTranslated": "Streaming", "parentId": "05000000", "parentDescription": "Shopping and services" },
+  { "id": "05090000", "description": "Shopping", "descriptionTranslated": "Compras", "parentId": "05000000", "parentDescription": "Shopping and services" },
+  { "id": "06000000", "description": "Transfers", "descriptionTranslated": "Transferências" },
+  { "id": "06010000", "description": "Same person transfer", "descriptionTranslated": "Transferência entre contas próprias", "parentId": "06000000", "parentDescription": "Transfers" },
+  { "id": "07000000", "description": "Credit card payment", "descriptionTranslated": "Pagamento de fatura", "parentId": "06000000", "parentDescription": "Transfers" },
+  { "id": "08000000", "description": "Investments", "descriptionTranslated": "Investimentos" }
+]

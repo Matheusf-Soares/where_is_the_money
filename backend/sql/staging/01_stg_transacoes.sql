@@ -46,6 +46,11 @@ WITH base AS (
 
         lower(coalesce(descricao, descricao_original, ''))  AS descricao_busca,
         lower(coalesce(estabelecimento_nome, ''))           AS estabelecimento_busca,
+        -- Vazio quando a Pluggy não classificou (feature premium desligada, ou
+        -- transação que o modelo não reconheceu). Vazio não casa padrão nenhum,
+        -- então o reforço por categoria simplesmente não atua — e o filtro por
+        -- texto continua sendo tudo que existe.
+        lower(coalesce(categoria, ''))                      AS categoria_busca,
         lower(coalesce(instituicao, ''))                    AS instituicao_busca,
         lower(coalesce(pagador_nome, ''))                   AS pagador_busca,
         lower(coalesce(recebedor_nome, ''))                 AS recebedor_busca,
@@ -134,10 +139,21 @@ SELECT
     b.metodo_pagamento,
 
     -- Armadilha 1: pagamento de fatura de cartão.
-    EXISTS (
-        SELECT 1 FROM cfg_padroes_fatura f
-        WHERE b.instituicao_busca LIKE f.instituicao
-          AND b.descricao_busca   LIKE f.padrao
+    --
+    -- Texto OU categoria. A segunda metade cobre a redação que ninguém previu —
+    -- o dia em que o Santander trocar "PAGTO CARTAO" por outra coisa, a
+    -- categoria `Credit card payment` continua marcando.
+    (
+        EXISTS (
+            SELECT 1 FROM cfg_padroes_fatura f
+            WHERE b.instituicao_busca LIKE f.instituicao
+              AND b.descricao_busca   LIKE f.padrao
+        )
+        OR EXISTS (
+            SELECT 1 FROM cfg_categorias_ruido c
+            WHERE c.bandeira = 'fatura'
+              AND b.categoria_busca LIKE c.padrao
+        )
     ) AS e_pagamento_de_fatura,
 
     -- Armadilha 2: transferência entre contas do próprio titular.
@@ -145,6 +161,11 @@ SELECT
     -- O campo onde procurar depende do tipo, e não é enfeite: procurar o nome
     -- do titular dentro de um número de documento gera falso positivo, e uma
     -- chave Pix nunca aparece no campo de nome.
+    --
+    -- Aqui o reforço por categoria vale ainda mais: a lista de contrapartes
+    -- depende de você ter escrito seu nome e cada chave Pix, em cada formato.
+    -- `Same person transfer` não depende de nada disso.
+    (
     EXISTS (
         SELECT 1 FROM cfg_contrapartes_proprias c
         WHERE (
@@ -167,13 +188,26 @@ SELECT
                 b.descricao_busca           LIKE c.valor
             )
         )
+    )
+    OR EXISTS (
+        SELECT 1 FROM cfg_categorias_ruido c
+        WHERE c.bandeira = 'transferencia_propria'
+          AND b.categoria_busca LIKE c.padrao
+    )
     ) AS e_transferencia_propria,
 
     -- Armadilha 3: aporte ou resgate. O dinheiro mudou de lugar, não sumiu.
-    EXISTS (
-        SELECT 1 FROM cfg_padroes_aplicacao a
-        WHERE b.instituicao_busca LIKE a.instituicao
-          AND b.descricao_busca   LIKE a.padrao
+    (
+        EXISTS (
+            SELECT 1 FROM cfg_padroes_aplicacao a
+            WHERE b.instituicao_busca LIKE a.instituicao
+              AND b.descricao_busca   LIKE a.padrao
+        )
+        OR EXISTS (
+            SELECT 1 FROM cfg_categorias_ruido c
+            WHERE c.bandeira = 'aplicacao'
+              AND b.categoria_busca LIKE c.padrao
+        )
     ) AS e_aplicacao
 FROM base b
 LEFT JOIN regra_casada rc

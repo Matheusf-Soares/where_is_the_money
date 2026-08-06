@@ -202,6 +202,21 @@ CREATE TABLE IF NOT EXISTS cfg_categorias (
 -- Casa por igualdade, não por LIKE: o conjunto de categorias da Pluggy é finito
 -- e conhecido, então a igualdade elimina por construção a chance de duas linhas
 -- casarem a mesma transação.
+-- A Pluggy classifica nativamente `Credit card payment`, `Same person transfer`
+-- e `Investments` — exatamente as armadilhas 1, 2 e 3. Esta tabela deixa essa
+-- classificação REFORÇAR a bandeira, nunca substituí-la: em stg_transacoes o
+-- casamento é por OR com o padrão de texto.
+--
+-- Por que complementar e não substituir: categorização por ML erra, e o texto
+-- pega o que ela errar. Trocar um pelo outro só mudaria o tipo de falso
+-- negativo. E se a feature de categorização estiver desligada na conta, a
+-- coluna vem nula e o filtro por texto continua sendo tudo que existe.
+CREATE TABLE IF NOT EXISTS cfg_categorias_ruido (
+    bandeira              VARCHAR       NOT NULL,  -- fatura | transferencia_propria | aplicacao
+    padrao                VARCHAR       NOT NULL,  -- padrão LIKE sobre a categoria, em minúsculas
+    observacao            VARCHAR
+);
+
 CREATE TABLE IF NOT EXISTS cfg_mapa_categorias (
     id_categoria          VARCHAR       NOT NULL,  -- categoryId da Pluggy, ex.: 05070000
     categoria             VARCHAR       NOT NULL,

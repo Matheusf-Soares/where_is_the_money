@@ -9,6 +9,7 @@ Layout esperado do diretório de fixtures:
 
     <fixtures>/
     ├─ items.json                        {"results": [...]}
+    ├─ categories.json                   taxonomia (array puro na API real)
     ├─ accounts/<id_item>.json
     ├─ transactions/<id_conta>.json
     └─ investments/<id_item>.json
@@ -63,6 +64,15 @@ class ClienteFixtures:
 
     def listar_investimentos(self, id_item: str) -> list[dict[str, Any]]:
         return self._ler(f"investments/{id_item}.json")
+
+    def listar_categorias(self) -> list[dict[str, Any]]:
+        """Taxonomia de categorias.
+
+        Ausência é legítima: quem não tem a feature de categorização habilitada
+        na Pluggy não recebe categoria nenhuma, e o de-para simplesmente fica
+        vazio. Não é erro de configuração.
+        """
+        return self._ler("categories.json")
 
     # -- leitura ------------------------------------------------------------
 

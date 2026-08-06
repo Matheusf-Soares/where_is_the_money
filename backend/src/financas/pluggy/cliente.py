@@ -112,6 +112,15 @@ class Cliente(Protocol):
         """Posição de investimentos de um item."""
         ...
 
+    def listar_categorias(self) -> list[dict[str, Any]]:
+        """Taxonomia de categorias da Pluggy.
+
+        Diferente dos outros, este endpoint não devolve dado seu: é uma lista de
+        referência, igual para todo mundo. Serve para gerar o de-para da fase 2
+        com os ids reais, em vez de adivinhá-los.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Implementação HTTP
@@ -208,6 +217,24 @@ class ClienteHttp:
     def listar_investimentos(self, id_item: str) -> list[dict[str, Any]]:
         return list(self._paginar("/investments", {"itemId": id_item}))
 
+    def listar_categorias(self) -> list[dict[str, Any]]:
+        """`GET /categories`: a taxonomia inteira, sem paginação.
+
+        Este endpoint foge do padrão dos outros: devolve um array puro, e não o
+        envelope `{"results": [...]}`. Aceitar as duas formas evita depender de
+        um detalhe que a documentação não promete manter.
+        """
+        corpo = self._requisitar("GET", "/categories", exigir_objeto=False)
+
+        if isinstance(corpo, dict):
+            corpo = corpo.get("results", [])
+        if not isinstance(corpo, list):
+            raise ErroPluggy(
+                f"GET /categories devolveu {type(corpo).__name__}, "
+                f"esperava uma lista: {repr(corpo)[:200]}"
+            )
+        return [item for item in corpo if isinstance(item, dict)]
+
     # -- paginação ----------------------------------------------------------
 
     def _paginar(
@@ -256,7 +283,8 @@ class ClienteHttp:
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
         autenticado: bool = True,
-    ) -> dict[str, Any]:
+        exigir_objeto: bool = True,
+    ) -> Any:
         """Executa uma requisição com retry e tradução de erro.
 
         Reautentica uma única vez diante de um 401 em requisição autenticada:
@@ -283,7 +311,9 @@ class ClienteHttp:
                 continue
 
             if resposta.status_code < 400:
-                return _corpo_json(resposta, metodo, caminho)
+                return _corpo_json(
+                    resposta, metodo, caminho, exigir_objeto=exigir_objeto
+                )
 
             if resposta.status_code == 401 and autenticado and not reautenticou:
                 registrador.info("apiKey recusada (401); autenticando de novo")
@@ -333,8 +363,17 @@ class ClienteHttp:
 
 
 def _corpo_json(
-    resposta: httpx.Response, metodo: str, caminho: str
-) -> dict[str, Any]:
+    resposta: httpx.Response,
+    metodo: str,
+    caminho: str,
+    *,
+    exigir_objeto: bool = True,
+) -> Any:
+    """Interpreta o corpo da resposta.
+
+    `exigir_objeto` existe porque `GET /categories` devolve um array puro, e não
+    o envelope `{"results": [...]}` de todos os outros endpoints.
+    """
     try:
         corpo = resposta.json()
     except ValueError as erro:
@@ -342,7 +381,7 @@ def _corpo_json(
             f"{metodo} {caminho} respondeu {resposta.status_code} com corpo "
             f"que não é JSON: {resposta.text[:200]!r}"
         ) from erro
-    if not isinstance(corpo, dict):
+    if exigir_objeto and not isinstance(corpo, dict):
         raise ErroPluggy(
             f"{metodo} {caminho} respondeu com {type(corpo).__name__}, esperava objeto JSON"
         )

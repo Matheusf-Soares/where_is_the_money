@@ -22,6 +22,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from pathlib import Path
 
+from financas.categorias import auditar, gerar_de_para
 from financas.config import (
     Configuracao,
     ErroDeConfiguracao,
@@ -38,6 +39,7 @@ SAIDA_OK = 0
 SAIDA_ERRO = 1            # configuração inválida, uso errado, falha inesperada
 SAIDA_DADOS_VELHOS = 2    # alguma instituição parou de atualizar (armadilha 4)
 SAIDA_INGESTAO_PARCIAL = 3  # pelo menos uma instituição falhou
+SAIDA_CONFIG_MORTA = 4    # regra que nunca casa: filtro que não filtra
 
 registrador = logging.getLogger("financas")
 
@@ -160,6 +162,109 @@ def comando_frescor(argumentos: argparse.Namespace, config: Configuracao) -> int
     return SAIDA_OK
 
 
+def comando_categorias(argumentos: argparse.Namespace, config: Configuracao) -> int:
+    """Gera o de-para a partir da API, ou audita a configuração atual."""
+    if argumentos.sincronizar:
+        return _sincronizar_categorias(argumentos, config)
+    return _auditar_categorias(config)
+
+
+def _sincronizar_categorias(
+    argumentos: argparse.Namespace, config: Configuracao
+) -> int:
+    """Busca `GET /categories` e escreve o bloco `[[mapa_categoria]]`.
+
+    Este é o único comando que faz sentido rodar em modo online sem ingerir
+    nada: a taxonomia é lista de referência, igual para todos os clientes, e
+    não contém dado financeiro.
+    """
+    cliente = criar_cliente(config)
+    categorias = cliente.listar_categorias()
+
+    if not categorias and config.offline:
+        print(
+            "nenhuma categoria nas fixtures. Rode com --modo online para buscar "
+            "a taxonomia real da Pluggy.",
+            file=sys.stderr,
+        )
+        return SAIDA_ERRO
+
+    texto = gerar_de_para(categorias, existentes=config.regras)
+
+    if argumentos.saida:
+        argumentos.saida.write_text(texto, encoding="utf-8")
+        print(f"{len(categorias)} categorias escritas em {argumentos.saida}")
+        print(
+            f"Revise os grupos e cole o conteúdo no fim de {config.caminho_regras}, "
+            f"depois rode 'python -m financas views'."
+        )
+    else:
+        print(texto)
+
+    if not categorias:
+        print(
+            "\nA API não devolveu categoria nenhuma. Categorização é feature "
+            "premium na Pluggy — se não estiver habilitada na sua conta, o campo "
+            "'category' vem nulo em todas as transações e esta camada não tem o "
+            "que fazer.",
+            file=sys.stderr,
+        )
+        return SAIDA_ERRO
+
+    return SAIDA_OK
+
+
+def _auditar_categorias(config: Configuracao) -> int:
+    """Regra que nunca casou e quanto do gasto ficou sem categoria."""
+    if not config.caminho_banco.is_file():
+        print("banco ainda não existe. Rode 'ingerir'.", file=sys.stderr)
+        return SAIDA_ERRO
+
+    with Banco.abrir(config.caminho_banco) as banco:
+        banco.criar_schema()
+        try:
+            resultado = auditar(banco)
+        except Exception as erro:  # a view pode não existir ainda
+            print(
+                f"não consegui ler stg_transacoes ({erro}). "
+                f"Rode 'python -m financas views' antes.",
+                file=sys.stderr,
+            )
+            return SAIDA_ERRO
+
+    print(
+        f"{resultado.total_transacoes} transações consideradas "
+        f"(fatura, transferência própria e aplicação já fora)"
+    )
+    print(
+        f"sem categoria: {resultado.sem_categoria} "
+        f"({resultado.fracao_sem_categoria:.0%}), "
+        f"{_reais(resultado.valor_sem_categoria)}"
+    )
+
+    if resultado.ids_sem_de_para:
+        print("\ncategorias da Pluggy que ainda não têm de-para:")
+        for id_categoria, descricao, quantidade in resultado.ids_sem_de_para[:15]:
+            print(f"  {id_categoria:<12} {descricao:<28} {quantidade:>4} transações")
+
+    if resultado.regras_mortas:
+        print(file=sys.stderr)
+        print(
+            f"{len(resultado.regras_mortas)} regra(s) nunca casaram com nada:",
+            file=sys.stderr,
+        )
+        for prioridade, padrao in resultado.regras_mortas:
+            print(f"  prioridade {prioridade}: {padrao}", file=sys.stderr)
+        print(
+            "\nRegra que não casa é filtro que não filtra. Confira a redação "
+            "contra as descrições reais em stg_transacoes.",
+            file=sys.stderr,
+        )
+        return SAIDA_CONFIG_MORTA
+
+    return SAIDA_OK
+
+
 def comando_status(argumentos: argparse.Namespace, config: Configuracao) -> int:
     """Resumo do que existe no banco. Comando de inspeção, não altera nada."""
     print(f"modo:    {config.modo}")
@@ -247,10 +352,36 @@ def construir_analisador() -> argparse.ArgumentParser:
     )
     frescor_.set_defaults(executar=comando_frescor)
 
+    categorias_ = sub.add_parser(
+        "categorias", help="gera o de-para da fase 2, ou audita o que já existe"
+    )
+    categorias_.add_argument(
+        "--sincronizar",
+        action="store_true",
+        help="busca a taxonomia em GET /categories e gera o [[mapa_categoria]]",
+    )
+    categorias_.add_argument(
+        "--saida",
+        type=Path,
+        help="escreve o bloco gerado neste arquivo em vez da saída padrão",
+    )
+    categorias_.set_defaults(executar=comando_categorias)
+
     status_ = sub.add_parser("status", help="resumo do que existe no banco")
     status_.set_defaults(executar=comando_status)
 
     return analisador
+
+
+def _reais(valor: object) -> str:
+    """Formata dinheiro no padrão brasileiro, sem depender de `locale`.
+
+    `locale` exige que a máquina tenha o pt_BR instalado, o que não dá para
+    assumir — e um relatório financeiro em português com separador americano
+    confunde na leitura rápida.
+    """
+    americano = f"{valor:,.2f}"
+    return "R$ " + americano.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
 
 def _data(valor: str) -> date:

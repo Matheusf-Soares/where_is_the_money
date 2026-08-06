@@ -29,7 +29,7 @@ categorização e não permitem séries históricas customizadas.
 | Fase | O quê | Situação |
 |---|---|---|
 | **1** | Ingestão, persistência, views SQL, testes, CLI | ✅ completa — 224 testes passando |
-| **2** | Categorização própria sobre a categoria da Pluggy | não iniciada |
+| **2** | Categorização própria sobre a categoria da Pluggy | em andamento — resolução em 3 camadas pronta |
 | **3** | Frontend consumindo as views | não iniciada — `frontend/` está vazia |
 | **4** | *(talvez)* migração para GCP com execução agendada | — |
 
@@ -252,6 +252,16 @@ Já custaram tempo. São requisitos, não sugestões.
 | 8 | **`itemId` muda** a cada reautorização | é atributo, nunca identidade |
 | 9 | **Histórico começa ~2025-08** | `data_inicial` no `regras.toml` |
 
+**A Pluggy classifica nativamente as armadilhas 1, 2 e 3** — as categorias
+`Credit card payment`, `Same person transfer` e `Investments`. `cfg_categorias_ruido`
+soma esse sinal ao filtro de texto por **OR**, nunca no lugar dele: categorização
+por ML erra, o texto pega o que ela errar, e se a feature estiver desligada na
+conta a categoria vem nula e só o texto atua. Duas redes, buracos diferentes.
+
+⚠️ **Categorização é feature premium na Pluggy**, opt-in depois do trial. Se
+estiver desligada, `category` vem nulo em todas as transações e tanto o de-para
+quanto o reforço ficam inertes. Conferir na primeira ingestão real.
+
 A armadilha 4 é a que define o desenho: **o modo de falha que este projeto
 combate é o silencioso.** Filtro que nunca casa, instituição que parou de
 atualizar, página 2 que ninguém buscou — tudo isso "funciona" e devolve número
@@ -278,11 +288,19 @@ python -m pytest                                    # 224 testes, sem rede
 python -m financas ingerir     # baixa e grava na camada raw
 python -m financas views       # recarrega cfg_* e aplica os .sql
 python -m financas frescor     # alguém parou de trazer dado novo?
+python -m financas categorias  # regra morta e cobertura da categorização
 python -m financas status      # o que existe no banco
 ```
 
 Flags globais: `--modo online|offline`, `--banco CAMINHO`, `-v` (ou `-vv`).
-`ingerir` aceita `--desde` e `--hoje`; `frescor`, `--hoje`.
+`ingerir` aceita `--desde` e `--hoje`; `frescor`, `--hoje`; `categorias`,
+`--sincronizar` e `--saida`.
+
+`categorias --sincronizar` é o único comando que faz sentido rodar online sem
+ingerir nada: busca `GET /categories`, que é lista de referência igual para
+todos os clientes, e gera o bloco `[[mapa_categoria]]` com os ids reais. Os ids
+da Pluggy não estão publicados em lugar nenhum — adivinhá-los produz um de-para
+que não casa nada e falha calado.
 
 ### Códigos de saída
 
@@ -294,6 +312,7 @@ Pensados para `cron` e script, onde ninguém lê a saída na hora:
 | `1` | configuração inválida, uso errado, falha inesperada |
 | `2` | **alguma instituição parou de atualizar** (armadilha 4) |
 | `3` | ingestão parcial: pelo menos uma instituição falhou |
+| `4` | regra de categoria que nunca casou: filtro que não filtra |
 
 ### Configuração: duas fontes
 

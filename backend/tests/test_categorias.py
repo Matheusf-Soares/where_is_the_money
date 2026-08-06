@@ -24,20 +24,26 @@ Casos-chave nas fixtures:
 
 from __future__ import annotations
 
+import tomllib
 from datetime import date, datetime
+from decimal import Decimal
 
+import httpx
 import pytest
 
+from financas.categorias import GRUPO_A_DEFINIR, auditar, gerar_de_para
 from financas.config import (
     CATEGORIA_PADRAO,
     GRUPO_PADRAO,
+    Configuracao,
     ErroDeConfiguracao,
     carregar_regras,
 )
 from financas.persistencia import Banco
+from financas.pluggy import ClienteFixtures, ClienteHttp
 from financas.views import aplicar_views
 
-from conftest import RAIZ, REGRAS_MINIMAS
+from conftest import FIXTURES_PLUGGY, RAIZ, REGRAS_MINIMAS
 
 SQL = RAIZ / "sql"
 
@@ -386,6 +392,294 @@ grupo = "Essencial"
 
 
 # ---------------------------------------------------------------------------
+# Sincronização da taxonomia (GET /categories)
+# ---------------------------------------------------------------------------
+
+TAXONOMIA = [
+    {"id": "05000000", "description": "Transfers", "descriptionTranslated": "Transferências"},
+    {
+        "id": "05080000",
+        "description": "Transfer - TED",
+        "descriptionTranslated": "Transferência - TED",
+        "parentId": "05000000",
+        "parentDescription": "Transfers",
+    },
+]
+
+
+def test_de_para_gerado_e_toml_valido() -> None:
+    """O bloco gerado vai ser colado num arquivo que o tomllib relê.
+
+    Uma aspa solta num nome de categoria quebraria o parse com erro que não
+    aponta para a causa — daí o escape e daí este teste.
+    """
+    texto = gerar_de_para(TAXONOMIA)
+
+    lido = tomllib.loads(texto)
+
+    assert [m["id_categoria"] for m in lido["mapa_categoria"]] == [
+        "05000000",
+        "05080000",
+    ]
+    assert all(m["grupo"] == GRUPO_A_DEFINIR for m in lido["mapa_categoria"])
+
+
+def test_de_para_usa_a_traducao_como_rotulo() -> None:
+    lido = tomllib.loads(gerar_de_para(TAXONOMIA))
+
+    assert lido["mapa_categoria"][0]["categoria"] == "Transferências"
+
+
+def test_de_para_escapa_aspas_no_nome() -> None:
+    texto = gerar_de_para(
+        [{"id": "01000000", "description": 'Categoria "estranha"'}]
+    )
+
+    assert tomllib.loads(texto)["mapa_categoria"][0]["categoria"] == (
+        'Categoria "estranha"'
+    )
+
+
+def test_de_para_comenta_o_que_ja_esta_mapeado(tmp_path) -> None:
+    """Colar o bloco duas vezes geraria id repetido, que a validação recusa."""
+    regras = regras_com(
+        """
+[[mapa_categoria]]
+id_categoria = "05000000"
+categoria = "Transferências"
+grupo = "Neutro"
+""",
+        tmp_path,
+    )
+
+    lido = tomllib.loads(gerar_de_para(TAXONOMIA, existentes=regras))
+
+    assert [m["id_categoria"] for m in lido["mapa_categoria"]] == ["05080000"]
+
+
+def test_taxonomia_vazia_avisa_sobre_a_feature_premium() -> None:
+    """Categorização é opt-in pago na Pluggy. Sem ela, `category` vem nulo em
+    todas as transações e esta camada inteira não tem o que fazer — o gerador
+    precisa dizer isso, não devolver um arquivo vazio sem explicação."""
+    texto = gerar_de_para([])
+
+    assert "premium" in texto
+    assert tomllib.loads(texto) == {}
+
+
+def test_cliente_offline_le_a_taxonomia() -> None:
+    categorias = ClienteFixtures(FIXTURES_PLUGGY).listar_categorias()
+
+    assert {c["id"] for c in categorias} >= {"05070000", "07000000"}
+
+
+def test_cliente_offline_tolera_taxonomia_ausente(tmp_path) -> None:
+    """Ausência é legítima: quem não tem a feature não recebe categoria."""
+    assert ClienteFixtures(tmp_path).listar_categorias() == []
+
+
+def test_cliente_http_aceita_array_puro(config_online: Configuracao) -> None:
+    """`GET /categories` foge do padrão: devolve array, não {'results': [...]}."""
+
+    def atender(requisicao: httpx.Request) -> httpx.Response:
+        if requisicao.url.path == "/auth":
+            return httpx.Response(200, json={"apiKey": "chave"})
+        return httpx.Response(200, json=TAXONOMIA)
+
+    with ClienteHttp(
+        config_online, transporte=httpx.MockTransport(atender), dormir=lambda _s: None
+    ) as cliente:
+        assert [c["id"] for c in cliente.listar_categorias()] == [
+            "05000000",
+            "05080000",
+        ]
+
+
+def test_cliente_http_aceita_envelope_results(config_online: Configuracao) -> None:
+    def atender(requisicao: httpx.Request) -> httpx.Response:
+        if requisicao.url.path == "/auth":
+            return httpx.Response(200, json={"apiKey": "chave"})
+        return httpx.Response(200, json={"results": TAXONOMIA})
+
+    with ClienteHttp(
+        config_online, transporte=httpx.MockTransport(atender), dormir=lambda _s: None
+    ) as cliente:
+        assert len(cliente.listar_categorias()) == 2
+
+
+# ---------------------------------------------------------------------------
+# Auditoria
+# ---------------------------------------------------------------------------
+
+
+def test_auditoria_acusa_regra_que_nunca_casou(banco: Banco, tmp_path) -> None:
+    """O ponto inteiro do comando. Regra que não casa é filtro que não filtra,
+    e sem isso ela fica lá para sempre sem ninguém perceber."""
+    regras = regras_com(
+        """
+[[categoria]]
+prioridade = 99
+padrao = "%estabelecimento que nao existe%"
+categoria = "Fantasma"
+grupo = "Lazer"
+""",
+        tmp_path,
+    )
+    banco.gravar_regras(regras)
+    _inserir(banco, "tx-9", "Supermercado Big", "05010000")
+    aplicar_views(banco, SQL)
+
+    resultado = auditar(banco)
+
+    assert 99 in {prioridade for prioridade, _ in resultado.regras_mortas}
+    assert resultado.tem_alerta
+
+
+def test_auditoria_nao_acusa_regra_viva(banco_com_views: Banco) -> None:
+    resultado = auditar(banco_com_views)
+
+    assert resultado.regras_mortas == ()
+    assert not resultado.tem_alerta
+
+
+def test_auditoria_mede_a_cobertura(banco_com_views: Banco) -> None:
+    resultado = auditar(banco_com_views)
+
+    assert resultado.total_transacoes > 0
+    assert 0 < resultado.fracao_sem_categoria < 1
+
+
+def test_auditoria_ignora_o_que_ja_e_excluido(banco_com_views: Banco) -> None:
+    """A lista de trabalho não pode mandar você categorizar pagamento de fatura:
+    ele nunca chega em `gastos`, então o de-para não mudaria nada."""
+    pendentes = {
+        id_categoria
+        for id_categoria, _, _ in auditar(banco_com_views).ids_sem_de_para
+    }
+
+    excluidas = {
+        linha[0]
+        for linha in banco_com_views.conexao.execute(
+            "SELECT DISTINCT id_categoria FROM stg_transacoes "
+            "WHERE e_pagamento_de_fatura OR e_transferencia_propria OR e_aplicacao"
+        ).fetchall()
+        if linha[0]
+    }
+
+    assert not (pendentes & excluidas)
+
+
+# ---------------------------------------------------------------------------
+# Categoria reforçando as armadilhas 1, 2 e 3
+# ---------------------------------------------------------------------------
+
+
+def test_categoria_marca_fatura_que_o_texto_nao_pegou(banco: Banco, tmp_path) -> None:
+    """O caso que justifica o reforço: redação que nenhum padrão previu."""
+    regras = regras_com(
+        """
+[[categoria_ruido]]
+bandeira = "fatura"
+padrao = "credit card payment"
+""",
+        tmp_path,
+    )
+    banco.gravar_regras(regras)
+    _inserir(banco, "tx-f", "QUITACAO MENSAL PLASTICO", "07000000", categoria="Credit card payment")
+    aplicar_views(banco, SQL)
+
+    (marcado,) = uma(
+        banco,
+        "SELECT e_pagamento_de_fatura FROM stg_transacoes WHERE id_transacao = 'tx-f'",
+    )
+
+    assert marcado
+
+
+def test_categoria_marca_transferencia_propria_sem_lista_de_chaves(
+    banco: Banco, tmp_path
+) -> None:
+    """`Same person transfer` não depende de você ter escrito cada chave Pix."""
+    regras = regras_com(
+        """
+[[categoria_ruido]]
+bandeira = "transferencia_propria"
+padrao = "same person transfer%"
+""",
+        tmp_path,
+    )
+    banco.gravar_regras(regras)
+    _inserir(
+        banco,
+        "tx-t",
+        "TRANSF ENTRE CONTAS 998877",
+        "06010000",
+        categoria="Same person transfer - PIX",
+    )
+    aplicar_views(banco, SQL)
+
+    (marcado,) = uma(
+        banco,
+        "SELECT e_transferencia_propria FROM stg_transacoes WHERE id_transacao = 'tx-t'",
+    )
+
+    assert marcado
+
+
+def test_reforco_e_or_e_nao_substituicao(banco: Banco, tmp_path) -> None:
+    """Com a categorização desligada na conta, `categoria` vem nula — e o filtro
+    por texto tem que continuar sendo tudo que existe."""
+    regras = regras_com(
+        """
+[[categoria_ruido]]
+bandeira = "fatura"
+padrao = "credit card payment"
+""",
+        tmp_path,
+    )
+    banco.gravar_regras(regras)
+    # Sem categoria nenhuma, mas com a redação que o texto reconhece.
+    _inserir(banco, "tx-s", "Pagamento de fatura", "", categoria=None)
+    aplicar_views(banco, SQL)
+
+    (marcado,) = uma(
+        banco,
+        "SELECT e_pagamento_de_fatura FROM stg_transacoes WHERE id_transacao = 'tx-s'",
+    )
+
+    assert marcado
+
+
+def test_sem_categoria_ruido_o_comportamento_nao_muda(banco_com_views: Banco) -> None:
+    """As regras do conftest não têm `[[categoria_ruido]]`.
+
+    Se o reforço marcasse alguma coisa por conta própria, os testes das
+    armadilhas passariam a medir outra coisa sem ninguém perceber — e o total
+    do contrato mudaria em silêncio. Esta é a asserção que amarra as duas
+    pontas: tabela vazia, total idêntico ao de `test_views`.
+    """
+    assert uma(banco_com_views, "SELECT count(*) FROM cfg_categorias_ruido") == (0,)
+    assert uma(banco_com_views, "SELECT count(*), sum(valor) FROM gastos") == (
+        15,
+        Decimal("1434.75"),
+    )
+
+
+def test_bandeira_invalida_e_recusada(tmp_path) -> None:
+    with pytest.raises(ErroDeConfiguracao) as erro:
+        regras_com(
+            """
+[[categoria_ruido]]
+bandeira = "inventada"
+padrao = "qualquer coisa"
+""",
+            tmp_path,
+        )
+
+    assert "bandeira" in str(erro.value)
+
+
+# ---------------------------------------------------------------------------
 # Auxiliar
 # ---------------------------------------------------------------------------
 
@@ -396,6 +690,7 @@ def _inserir(
     descricao: str,
     id_categoria: str,
     estabelecimento: str | None = None,
+    categoria: str | None = "Qualquer",
 ) -> None:
     """Insere uma transação sintética direto na raw.
 
@@ -409,12 +704,13 @@ def _inserir(
             tipo, situacao, categoria, id_categoria, estabelecimento_nome,
             payload_json, ingerido_em, atualizado_em
         ) VALUES (?, 'conta-x', 'item-x', 'Nubank', ?, -10.00, 'BRL', ?,
-                  'DEBIT', 'POSTED', 'Qualquer', ?, ?, '{}', ?, ?)
+                  'DEBIT', 'POSTED', ?, ?, ?, '{}', ?, ?)
         """,
         [
             id_transacao,
             descricao,
             date(2025, 9, 1),
+            categoria,
             id_categoria,
             estabelecimento,
             datetime(2025, 9, 20, 10, 0, 0),

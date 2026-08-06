@@ -203,6 +203,13 @@ class Banco:
                 ],
             )
             self._reescrever(
+                "cfg_categorias_ruido",
+                [
+                    (c.bandeira, c.padrao, c.observacao)
+                    for c in regras.categorias_de_ruido
+                ],
+            )
+            self._reescrever(
                 "cfg_mapa_categorias",
                 [
                     (m.id_categoria, m.categoria, m.grupo, m.observacao)
