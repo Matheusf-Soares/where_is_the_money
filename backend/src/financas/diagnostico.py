@@ -64,6 +64,67 @@ def _mascarar(valor: str) -> str:
     return f"{len(valor)} caracteres, começa com {visivel!r}{aviso}"
 
 
+def _claims_do_jwt(chave: str) -> dict[str, Any] | None:
+    """Decodifica o payload de um JWT sem verificar assinatura.
+
+    A `apiKey` da Pluggy é um JWT, e o payload dela é quem sabe responder por
+    que a chave foi recusada: validade, escopo e plano vêm todos ali. Decodificar
+    é leitura local — não valida nada, e não precisa validar: quem valida é a
+    API, e a resposta dela já está no relatório.
+    """
+    import base64
+
+    partes = chave.split(".")
+    if len(partes) != 3:
+        return None
+    try:
+        corpo = partes[1]
+        corpo += "=" * (-len(corpo) % 4)  # base64url sem padding
+        return json.loads(base64.urlsafe_b64decode(corpo))
+    except Exception:
+        return None
+
+
+# Claims cujo valor é seguro mostrar: dizem respeito ao plano e à validade, não
+# à identidade. O resto aparece só como nome, porque o relatório vai parar em
+# print de tela e em chat de suporte.
+CLAIMS_SEGUROS = {
+    "exp", "iat", "nbf", "scope", "scopes", "role", "roles", "plan", "tier",
+    "environment", "env", "type", "status", "products", "permissions",
+    "isTrial", "trial", "active", "enabled",
+}
+
+
+def _achados_do_jwt(chave: str) -> list[Achado]:
+    """Transforma o payload da apiKey em linhas do relatório."""
+    claims = _claims_do_jwt(chave)
+    if claims is None:
+        return [Achado("apiKey", "não é um JWT decodificável (isso é normal)")]
+
+    achados = [Achado("claims da apiKey", ", ".join(sorted(claims)))]
+
+    for nome in sorted(claims):
+        if nome not in CLAIMS_SEGUROS:
+            continue
+        valor = claims[nome]
+        if nome in ("exp", "iat", "nbf") and isinstance(valor, (int, float)):
+            from datetime import datetime, timezone
+
+            quando = datetime.fromtimestamp(valor, tz=timezone.utc)
+            vencida = nome == "exp" and quando < datetime.now(tz=timezone.utc)
+            achados.append(
+                Achado(
+                    f"  claim {nome}",
+                    quando.isoformat() + ("  <-- JÁ VENCIDA" if vencida else ""),
+                    ok=False if vencida else None,
+                )
+            )
+        else:
+            achados.append(Achado(f"  claim {nome}", json.dumps(valor, ensure_ascii=False)[:160]))
+
+    return achados
+
+
 def _corpo(resposta: httpx.Response, limite: int = 400) -> str:
     try:
         return json.dumps(resposta.json(), ensure_ascii=False)[:limite]
@@ -128,6 +189,7 @@ def diagnosticar(config: Configuracao) -> list[Achado]:
             )
             return achados
         achados.append(Achado("apiKey recebida", _mascarar(chave), ok=True))
+        achados.extend(_achados_do_jwt(chave))
 
         # --- 2. qual cabeçalho a API aceita ---------------------------------
         # É a pergunta central quando /auth dá 200 e o resto dá 401.
@@ -208,26 +270,38 @@ def diagnosticar(config: Configuracao) -> list[Achado]:
 INTERPRETACAO_401 = """\
 COMO LER UM 401 LOGO DEPOIS DE UM /auth BEM-SUCEDIDO
 
-As credenciais são válidas — o /auth as aceitou. O que foi recusado foi a
-apiKey na requisição seguinte. As causas possíveis, da mais comum para a menos:
+As credenciais são válidas — o /auth as aceitou e devolveu uma apiKey bem
+formada. O que foi recusado foi essa chave, na requisição seguinte.
 
-1. TRIAL EXPIRADO / CONTA SEM ACESSO À API
-   A aplicação existe e autentica, mas o acesso aos dados foi cortado quando o
-   período de avaliação terminou. É o cenário mais provável em conta gratuita.
-   Onde conferir: dashboard.pluggy.ai, na aba de plano ou billing da aplicação.
+Repare na diferença entre os erros acima, porque ela é informativa:
+
+  X-API-KEY      -> 401 "Unauthorized"
+  Authorization  -> 403 "API_KEY_MISSING_OR_INVALID"
+
+O 403 diz "não achei chave nenhuma aqui" — é o esperado, já que a Pluggy lê a
+chave só do X-API-KEY. O 401 é diferente: a chave FOI lida, reconhecida como
+bem formada, e ainda assim negada. Isso descarta erro de cabeçalho, de formato
+e de credencial, e deixa três causas:
+
+1. CONTA SEM ACESSO À API (mais provável em plano gratuito)
+   A aplicação existe e autentica, mas o acesso aos dados foi cortado — trial
+   encerrado, ou plano que não inclui consumo de API.
+   Onde conferir: dashboard.pluggy.ai, aba de plano ou billing da aplicação.
 
 2. CREDENCIAL DE OUTRO AMBIENTE
-   Cada aplicação tem um par por ambiente. Autenticar com o par de um ambiente
-   e consultar dados de outro devolve 401.
+   Cada aplicação tem um par por ambiente. Autenticar com o par de um e
+   consultar dados de outro devolve exatamente este 401.
    Onde conferir: dashboard.pluggy.ai > sua aplicação > credenciais; confirme
    que está copiando as de Desenvolvimento.
 
-3. APLICAÇÃO DESATIVADA OU CREDENCIAL ROTACIONADA PELA METADE
-   Se o secret foi rotacionado e só ele foi atualizado no .env, o /auth pode
-   passar e a chave sair sem escopo.
+3. APLICAÇÃO DESATIVADA OU PAR ROTACIONADO PELA METADE
+   Se só o secret foi atualizado no .env, o /auth pode passar e a chave sair
+   sem escopo.
    Onde conferir: gere um par novo e substitua os DOIS valores.
 
-O `errorId` que aparece na mensagem de erro é rastreável pelo suporte da
-Pluggy. Se nada acima resolver, é o que vale mandar para eles junto do
-horário da requisição.\
+Os claims da apiKey aparecem no relatório acima. Se houver algum indicando
+plano, escopo ou validade, é ele que responde qual dos três casos é o seu.
+
+O `errorId` de cada resposta é rastreável pelo suporte da Pluggy — é o que
+vale mandar para eles, junto do horário, se nada acima resolver.\
 """
