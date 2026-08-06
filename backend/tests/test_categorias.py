@@ -53,10 +53,10 @@ def uma(banco: Banco, consulta: str):
 
 
 def categoria_de(banco: Banco, id_transacao: str) -> tuple[str, str, str]:
-    """Devolve (categoria_propria, grupo, origem) de uma transação."""
+    """Devolve (categoria, grupo, origem) de uma transação."""
     return uma(
         banco,
-        "SELECT categoria_propria, grupo, origem_da_categoria FROM stg_transacoes "
+        "SELECT categoria, grupo, origem_da_categoria FROM stg_transacoes "
         f"WHERE id_transacao = '{id_transacao}'",
     )
 
@@ -175,7 +175,7 @@ def test_nenhuma_transacao_fica_sem_categoria(banco_com_views: Banco) -> None:
     (nulas,) = uma(
         banco_com_views,
         "SELECT count(*) FROM stg_transacoes "
-        "WHERE categoria_propria IS NULL OR grupo IS NULL",
+        "WHERE categoria IS NULL OR grupo IS NULL",
     )
 
     assert nulas == 0
@@ -214,7 +214,7 @@ def test_categoria_da_pluggy_continua_disponivel(banco_com_views: Banco) -> None
     """Sem ela não dá para auditar o de-para nem descobrir id que falta."""
     categoria_pluggy, id_categoria = uma(
         banco_com_views,
-        "SELECT categoria, id_categoria FROM stg_transacoes "
+        "SELECT categoria_pluggy, id_categoria FROM stg_transacoes "
         "WHERE id_transacao = 'tx-nu-b-05'",
     )
 

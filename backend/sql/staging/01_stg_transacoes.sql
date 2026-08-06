@@ -109,7 +109,11 @@ SELECT
     b.moeda,
     b.tipo,
     b.situacao,
-    b.categoria,
+    -- Nomenclatura, válida no projeto inteiro: `categoria` é SEMPRE a sua, e
+    -- `categoria_pluggy` é SEMPRE a que a API devolveu. A da Pluggy continua
+    -- ao lado para auditar o de-para — dá para ver o que a fonte dizia e o que
+    -- virou.
+    b.categoria      AS categoria_pluggy,
     b.id_categoria,
 
     -- Fase 2: a categoria própria, resolvida nas três camadas.
@@ -117,10 +121,7 @@ SELECT
     -- O coalesce é a resolução inteira: regra por texto, senão de-para do
     -- categoryId, senão o rótulo padrão. Nunca NULL — categoria que some de um
     -- GROUP BY é gasto que desaparece do relatório sem ninguém notar.
-    --
-    -- `categoria` (a da Pluggy) continua ao lado, para auditar o de-para: dá
-    -- para ver o que a fonte dizia e o que virou.
-    coalesce(rc.categoria, m.categoria, r.categoria_padrao)  AS categoria_propria,
+    coalesce(rc.categoria, m.categoria, r.categoria_padrao)  AS categoria,
     coalesce(rc.grupo,     m.grupo,     r.grupo_padrao)      AS grupo,
 
     -- De qual camada veio. Sem isso, "por que essa transação está em Lazer?"

@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>where_is_the_money</title>
+<!--
+  Frontend da fase 3.
+
+  Arquivo único, sem build, sem servidor de aplicação. O DuckDB-WASM roda no
+  navegador e consulta os Parquet publicados por `python -m financas publicar`.
+
+  A escolha não é economia de infraestrutura: é o que preserva o princípio 3 do
+  projeto ("regra de negócio em SQL, não em Python"). Uma API REST tem gravidade
+  própria — no dia em que a tela precisasse de "gasto por categoria com média
+  móvel", o caminho mais curto seria escrever isso no endpoint, e a regra
+  passaria a existir em dois lugares. Aqui o frontend fala SQL contra as MESMAS
+  views versionadas do backend. Não há onde esconder lógica.
+
+  Nenhuma agregação aqui inventa regra de negócio: são SUM e GROUP BY sobre
+  colunas que as views já decidiram. O que é gasto, o que é ruído e qual é a
+  categoria já vem resolvido de `gastos` e `stg_transacoes`.
+-->
+<style>
+  :root {
+    --fundo: #0f1115;
+    --painel: #171a21;
+    --painel-alto: #1e222b;
+    --borda: #2a2f3a;
+    --texto: #e6e9ef;
+    --texto-fraco: #9aa3b2;
+    --acento: #6ea8fe;
+    --positivo: #4ade80;
+    --negativo: #f87171;
+    --alerta: #fbbf24;
+    --fonte-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--fundo);
+    color: var(--texto);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 18px 24px 0;
+    border-bottom: 1px solid var(--borda);
+    background: var(--painel);
+  }
+  h1 { font-size: 17px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  h1 span { color: var(--texto-fraco); font-weight: 400; }
+  .meta { color: var(--texto-fraco); font-size: 12px; margin-bottom: 14px; }
+  nav { display: flex; gap: 2px; flex-wrap: wrap; }
+  nav button {
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--texto-fraco); padding: 9px 14px; cursor: pointer;
+    font-size: 13px; font-family: inherit;
+  }
+  nav button:hover { color: var(--texto); }
+  nav button.ativa { color: var(--acento); border-bottom-color: var(--acento); }
+  main { padding: 20px 24px 60px; max-width: 1500px; }
+  section { display: none; }
+  section.ativa { display: block; }
+
+  .avisos { margin: 14px 24px 0; }
+  .aviso {
+    background: rgba(251, 191, 36, .1); border: 1px solid rgba(251,191,36,.35);
+    border-left-width: 3px; color: #fde68a; padding: 9px 13px;
+    border-radius: 5px; margin-bottom: 7px; font-size: 13px;
+  }
+  .erro {
+    background: rgba(248, 113, 113, .1); border: 1px solid rgba(248,113,113,.4);
+    border-left-width: 3px; color: #fca5a5; padding: 12px 15px;
+    border-radius: 5px; margin-bottom: 12px; font-family: var(--fonte-mono);
+    font-size: 12px; white-space: pre-wrap;
+  }
+
+  .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .cartao { background: var(--painel); border: 1px solid var(--borda); border-radius: 8px; padding: 14px 16px; }
+  .cartao .rotulo { color: var(--texto-fraco); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .cartao .valor { font-size: 24px; font-weight: 600; margin-top: 5px; letter-spacing: -0.02em; }
+  .cartao .nota { color: var(--texto-fraco); font-size: 11px; margin-top: 3px; }
+
+  .painel { background: var(--painel); border: 1px solid var(--borda); border-radius: 8px; padding: 16px; margin-bottom: 18px; }
+  .painel h2 { font-size: 13px; margin: 0 0 14px; color: var(--texto-fraco); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  .lado-a-lado { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 980px) { .lado-a-lado { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--texto-fraco); font-weight: 600; font-size: 11px;
+       text-transform: uppercase; letter-spacing: .05em; padding: 7px 9px;
+       border-bottom: 1px solid var(--borda); position: sticky; top: 0; background: var(--painel); }
+  td { padding: 6px 9px; border-bottom: 1px solid rgba(42,47,58,.5); }
+  tr:hover td { background: var(--painel-alto); }
+  .num { text-align: right; font-family: var(--fonte-mono); font-variant-numeric: tabular-nums; }
+  .rolagem { max-height: 620px; overflow: auto; border-radius: 6px; }
+
+  input, select, textarea, button.acao {
+    background: var(--painel-alto); color: var(--texto); border: 1px solid var(--borda);
+    border-radius: 6px; padding: 7px 10px; font-family: inherit; font-size: 13px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--acento); border-color: var(--acento); }
+  button.acao { cursor: pointer; }
+  button.acao:hover { background: var(--borda); }
+  .filtros { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filtros input[type=search] { min-width: 260px; flex: 1; }
+  label.caixa { display: inline-flex; align-items: center; gap: 5px; color: var(--texto-fraco); font-size: 12px; cursor: pointer; }
+
+  .etiqueta { display: inline-block; padding: 1px 7px; border-radius: 20px; font-size: 11px; border: 1px solid; }
+  .et-fatura   { color: #fca5a5; border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.09); }
+  .et-transf   { color: #c4b5fd; border-color: rgba(196,181,253,.4); background: rgba(196,181,253,.09); }
+  .et-aplic    { color: #7dd3fc; border-color: rgba(125,211,252,.4); background: rgba(125,211,252,.09); }
+  .et-gasto    { color: var(--positivo); border-color: rgba(74,222,128,.35); background: rgba(74,222,128,.08); }
+  .et-regra    { color: var(--positivo); border-color: rgba(74,222,128,.3); }
+  .et-mapa     { color: var(--acento);   border-color: rgba(110,168,254,.35); }
+  .et-padrao   { color: var(--texto-fraco); border-color: var(--borda); }
+
+  .barra-linha { display: grid; grid-template-columns: 150px 1fr 110px; gap: 10px; align-items: center; margin-bottom: 5px; font-size: 13px; }
+  .barra-trilho { background: var(--painel-alto); border-radius: 3px; height: 20px; overflow: hidden; }
+  .barra-preenchida { height: 100%; background: linear-gradient(90deg, var(--acento), #8b5cf6); border-radius: 3px; }
+  .barra-rotulo { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--texto-fraco); }
+
+  .conciliacao { font-family: var(--fonte-mono); font-size: 13px; line-height: 1.9; }
+  .conciliacao .linha { display: flex; justify-content: space-between; max-width: 460px; }
+  .conciliacao .total { border-top: 1px solid var(--borda); margin-top: 5px; padding-top: 5px; font-weight: 600; }
+  .ok { color: var(--positivo); } .ruim { color: var(--negativo); }
+  .carregando { color: var(--texto-fraco); padding: 40px 0; text-align: center; }
+  .vazio { color: var(--texto-fraco); padding: 26px 0; text-align: center; font-style: italic; }
+  textarea { width: 100%; min-height: 110px; font-family: var(--fonte-mono); font-size: 13px; resize: vertical; }
+  .dica { color: var(--texto-fraco); font-size: 12px; margin-top: 8px; }
+  .dica code { background: var(--painel-alto); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>where_is_the_money <span id="periodo"></span></h1>
+  <div class="meta" id="meta">carregando…</div>
+  <nav>
+    <button data-aba="visao" class="ativa">Visão geral</button>
+    <button data-aba="gastos">Gastos</button>
+    <button data-aba="auditoria">Auditoria</button>
+    <button data-aba="recorrencias">Recorrências</button>
+    <button data-aba="patrimonio">Patrimônio</button>
+    <button data-aba="sql">SQL</button>
+  </nav>
+</header>
+
+<div class="avisos" id="avisos"></div>
+
+<main>
+  <div id="carregando" class="carregando">iniciando o DuckDB no navegador…</div>
+
+  <section id="aba-visao">
+    <div class="cartoes" id="cartoes"></div>
+    <div class="lado-a-lado">
+      <div class="painel"><h2>Gasto por mês</h2><div id="grafico-mes"></div></div>
+      <div class="painel"><h2>Por grupo</h2><div id="grafico-grupo"></div></div>
+    </div>
+    <div class="painel"><h2>Maiores categorias</h2><div id="grafico-categoria"></div></div>
+  </section>
+
+  <section id="aba-gastos">
+    <div class="painel">
+      <div class="filtros">
+        <input type="search" id="g-busca" placeholder="buscar descrição ou estabelecimento…">
+        <select id="g-mes"></select>
+        <select id="g-instituicao"></select>
+        <select id="g-grupo"></select>
+        <select id="g-categoria"></select>
+        <button class="acao" id="g-limpar">limpar</button>
+      </div>
+      <div id="g-resumo" class="meta"></div>
+      <div class="rolagem"><table id="g-tabela"></table></div>
+    </div>
+  </section>
+
+  <section id="aba-auditoria">
+    <div class="painel">
+      <h2>Conciliação — o total tem que fechar</h2>
+      <div class="conciliacao" id="conciliacao"></div>
+      <div class="dica">
+        Todo débito da camada raw ou virou gasto, ou foi excluído por uma bandeira.
+        Se a diferença não for zero, tem dado sumindo ou sendo contado duas vezes.
+      </div>
+    </div>
+    <div class="painel">
+      <h2>Toda transação, com o motivo de cada exclusão</h2>
+      <div class="filtros">
+        <input type="search" id="a-busca" placeholder="buscar em descrição, estabelecimento, categoria, id…">
+        <select id="a-instituicao"></select>
+        <select id="a-situacao">
+          <option value="">todas as situações</option>
+          <option value="gasto">só o que virou gasto</option>
+          <option value="excluida">só o que foi excluído</option>
+          <option value="fatura">pagamento de fatura</option>
+          <option value="transferencia">transferência própria</option>
+          <option value="aplicacao">aplicação/resgate</option>
+          <option value="credito">créditos (entradas)</option>
+        </select>
+        <select id="a-origem">
+          <option value="">qualquer origem de categoria</option>
+          <option value="regra">regra por texto</option>
+          <option value="mapa">de-para da Pluggy</option>
+          <option value="padrao">sem categoria</option>
+        </select>
+        <button class="acao" id="a-limpar">limpar</button>
+      </div>
+      <div id="a-resumo" class="meta"></div>
+      <div class="rolagem"><table id="a-tabela"></table></div>
+    </div>
+  </section>
+
+  <section id="aba-recorrencias">
+    <div class="painel">
+      <h2>Assinaturas detectadas</h2>
+      <div class="dica" style="margin-bottom:14px">
+        Heurística: estabelecimento que cobra em vários meses distintos com valor estável.
+        A coluna <code>ativa</code> compara o último mês cobrado com o mês mais recente do
+        banco — assinatura cancelada continua na lista, mas não deveria contar no custo anual.
+      </div>
+      <div id="r-resumo" class="meta"></div>
+      <div class="rolagem"><table id="r-tabela"></table></div>
+    </div>
+  </section>
+
+  <section id="aba-patrimonio">
+    <div class="painel"><h2>Evolução do patrimônio líquido</h2><div id="grafico-patrimonio"></div></div>
+    <div class="painel">
+      <h2>Composição por instituição, no retrato mais recente</h2>
+      <div class="rolagem"><table id="p-tabela"></table></div>
+    </div>
+  </section>
+
+  <section id="aba-sql">
+    <div class="painel">
+      <h2>Consulta livre</h2>
+      <textarea id="sql-texto">SELECT grupo, categoria, count(*) AS transacoes, sum(valor) AS total
+FROM gastos
+GROUP BY grupo, categoria
+ORDER BY total DESC;</textarea>
+      <div style="margin-top:10px; display:flex; gap:9px; align-items:center;">
+        <button class="acao" id="sql-rodar">rodar (Ctrl+Enter)</button>
+        <span class="meta" id="sql-resumo"></span>
+      </div>
+      <div class="dica">
+        Tabelas: <code>gastos</code>, <code>stg_transacoes</code>, <code>recorrencias</code>,
+        <code>patrimonio</code>, <code>stg_contas</code>, <code>stg_investimentos</code>.
+        É o mesmo SQL do backend — as views são o contrato.
+      </div>
+      <div id="sql-erro"></div>
+      <div class="rolagem" style="margin-top:14px"><table id="sql-tabela"></table></div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
+
+// ---------------------------------------------------------------------------
+// Formatação
+// ---------------------------------------------------------------------------
+
+const reais = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const inteiro = new Intl.NumberFormat('pt-BR');
+const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+
+const brl = v => reais.format(Number(v) || 0);
+const rotuloMes = (ano, mes) => `${MESES[Number(mes) - 1] ?? '?'}/${String(ano).slice(2)}`;
+const escapar = t => String(t ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------------------------------------------------------------------------
+// Banco
+// ---------------------------------------------------------------------------
+
+const TABELAS = ['gastos', 'stg_transacoes', 'recorrencias', 'patrimonio',
+                 'stg_contas', 'stg_investimentos'];
+
+let conexao = null;
+
+async function iniciar() {
+  const pacotes = duckdb.getJsDelivrBundles();
+  const pacote = await duckdb.selectBundle(pacotes);
+  const urlWorker = URL.createObjectURL(
+    new Blob([`importScripts("${pacote.mainWorker}");`], { type: 'text/javascript' })
+  );
+  const worker = new Worker(urlWorker);
+  const banco = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger('WARNING'), worker);
+  await banco.instantiate(pacote.mainModule, pacote.pthreadWorker);
+  URL.revokeObjectURL(urlWorker);
+
+  conexao = await banco.connect();
+
+  // Cada Parquet vira uma view com o mesmo nome da view do backend. É o que
+  // permite colar uma consulta do DuckDB local aqui sem mudar nada.
+  for (const tabela of TABELAS) {
+    const url = new URL(`dados/${tabela}.parquet`, location.href).href;
+    await banco.registerFileURL(`${tabela}.parquet`, url, duckdb.DuckDBDataProtocol.HTTP, false);
+    await conexao.query(
+      `CREATE OR REPLACE VIEW ${tabela} AS SELECT * FROM read_parquet('${tabela}.parquet')`
+    );
+  }
+}
+
+/** Executa SQL e devolve array de objetos simples.
+ *
+ *  Converte BigInt e Decimal para Number na saída: o Arrow devolve tipos que o
+ *  Intl.NumberFormat não entende, e o sintoma seria "NaN" espalhado pela tela
+ *  em vez de um erro claro.
+ */
+async function consultar(sql) {
+  const resultado = await conexao.query(sql);
+  return resultado.toArray().map(linha => {
+    const objeto = {};
+    for (const [chave, valor] of Object.entries(linha.toJSON())) {
+      objeto[chave] = typeof valor === 'bigint' ? Number(valor)
+                    : (valor && typeof valor === 'object' && 'toString' in valor && !(valor instanceof Date))
+                      ? (isNaN(Number(valor)) ? String(valor) : Number(valor))
+                    : valor;
+    }
+    return objeto;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Componentes de desenho
+// ---------------------------------------------------------------------------
+
+function tabela(elemento, linhas, colunas) {
+  if (!linhas.length) {
+    elemento.innerHTML = `<tr><td class="vazio">nada aqui com esses filtros</td></tr>`;
+    return;
+  }
+  const cabecalho = colunas.map(c => `<th${c.num ? ' class="num"' : ''}>${escapar(c.titulo)}</th>`).join('');
+  const corpo = linhas.map(linha =>
+    '<tr>' + colunas.map(c => {
+      const conteudo = c.desenhar ? c.desenhar(linha) : escapar(linha[c.campo]);
+      return `<td${c.num ? ' class="num"' : ''}>${conteudo}</td>`;
+    }).join('') + '</tr>'
+  ).join('');
+  elemento.innerHTML = `<thead><tr>${cabecalho}</tr></thead><tbody>${corpo}</tbody>`;
+}
+
+/** Barras horizontais em HTML puro.
+ *
+ *  Sem biblioteca de gráfico de propósito: uma dependência a mais no CDN para
+ *  desenhar retângulo proporcional não se paga, e o projeto prefere biblioteca
+ *  padrão quando a diferença é pequena.
+ */
+function barras(elemento, dados, { rotulo, valor, formato = brl }) {
+  if (!dados.length) { elemento.innerHTML = '<div class="vazio">sem dados</div>'; return; }
+  const maximo = Math.max(...dados.map(d => Number(d[valor]) || 0), 1);
+  elemento.innerHTML = dados.map(d => {
+    const v = Number(d[valor]) || 0;
+    return `<div class="barra-linha">
+      <div class="barra-rotulo" title="${escapar(d[rotulo])}">${escapar(d[rotulo])}</div>
+      <div class="barra-trilho"><div class="barra-preenchida" style="width:${(v / maximo * 100).toFixed(1)}%"></div></div>
+      <div class="num">${formato(v)}</div>
+    </div>`;
+  }).join('');
+}
+
+/** Série temporal em SVG. */
+function linha(elemento, pontos, { x, y }) {
+  if (pontos.length < 2) {
+    elemento.innerHTML = `<div class="vazio">${pontos.length ? 'só um retrato até agora — a série aparece a partir do segundo dia de ingestão' : 'sem dados'}</div>`;
+    return;
+  }
+  const L = 60, largura = 900, altura = 260, base = altura - 30;
+  const valores = pontos.map(p => Number(p[y]) || 0);
+  const maximo = Math.max(...valores), minimo = Math.min(...valores, 0);
+  const faixa = (maximo - minimo) || 1;
+  const px = i => L + i * (largura - L - 20) / (pontos.length - 1);
+  const py = v => 20 + (1 - (v - minimo) / faixa) * (base - 20);
+
+  const caminho = pontos.map((p, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(valores[i]).toFixed(1)}`).join(' ');
+  const area = `${caminho} L${px(pontos.length - 1).toFixed(1)},${base} L${px(0).toFixed(1)},${base} Z`;
+  const marcas = [minimo, minimo + faixa / 2, maximo].map(v =>
+    `<line x1="${L}" y1="${py(v)}" x2="${largura - 20}" y2="${py(v)}" stroke="#2a2f3a" stroke-dasharray="3 3"/>
+     <text x="${L - 8}" y="${py(v) + 4}" fill="#9aa3b2" font-size="10" text-anchor="end">${brl(v)}</text>`).join('');
+  const rotulos = pontos.map((p, i) =>
+    (i === 0 || i === pontos.length - 1 || pontos.length < 9)
+      ? `<text x="${px(i)}" y="${altura - 8}" fill="#9aa3b2" font-size="10" text-anchor="middle">${escapar(p[x])}</text>` : ''
+  ).join('');
+
+  elemento.innerHTML = `<svg viewBox="0 0 ${largura} ${altura}" style="width:100%;height:auto">
+    <defs><linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6ea8fe" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="#6ea8fe" stop-opacity="0"/>
+    </linearGradient></defs>
+    ${marcas}
+    <path d="${area}" fill="url(#grad)"/>
+    <path d="${caminho}" fill="none" stroke="#6ea8fe" stroke-width="2"/>
+    ${pontos.map((p, i) => `<circle cx="${px(i)}" cy="${py(valores[i])}" r="3" fill="#6ea8fe"><title>${escapar(p[x])}: ${brl(valores[i])}</title></circle>`).join('')}
+    ${rotulos}
+  </svg>`;
+}
+
+function preencherSelect(elemento, valores, textoVazio) {
+  elemento.innerHTML = `<option value="">${textoVazio}</option>` +
+    valores.filter(v => v != null && v !== '')
+           .map(v => `<option value="${escapar(v)}">${escapar(v)}</option>`).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Abas
+// ---------------------------------------------------------------------------
+
+document.querySelectorAll('nav button').forEach(botao => {
+  botao.onclick = () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('ativa', b === botao));
+    document.querySelectorAll('main section').forEach(s =>
+      s.classList.toggle('ativa', s.id === `aba-${botao.dataset.aba}`));
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Visão geral
+// ---------------------------------------------------------------------------
+
+async function desenharVisao() {
+  const porMes = await consultar(`
+    SELECT ano, mes, sum(valor) AS total, count(*) AS transacoes
+    FROM gastos GROUP BY ano, mes ORDER BY ano, mes`);
+
+  const ultimo = porMes.at(-1);
+  const media = porMes.length ? porMes.reduce((s, m) => s + m.total, 0) / porMes.length : 0;
+
+  const [patrimonio] = await consultar(`
+    SELECT sum(patrimonio_liquido) AS liquido, max(data_posicao) AS quando
+    FROM patrimonio
+    WHERE data_posicao = (SELECT max(data_posicao) FROM patrimonio)`);
+
+  const [assinaturas] = await consultar(`
+    SELECT count(*) AS quantas, coalesce(sum(custo_anual_estimado), 0) AS anual
+    FROM recorrencias`);
+
+  document.getElementById('cartoes').innerHTML = `
+    <div class="cartao">
+      <div class="rotulo">Último mês</div>
+      <div class="valor">${brl(ultimo?.total)}</div>
+      <div class="nota">${ultimo ? rotuloMes(ultimo.ano, ultimo.mes) + ' · ' + ultimo.transacoes + ' transações' : 'sem dados'}</div>
+    </div>
+    <div class="cartao">
+      <div class="rotulo">Média mensal</div>
+      <div class="valor">${brl(media)}</div>
+      <div class="nota">${porMes.length} ${porMes.length === 1 ? 'mês observado' : 'meses observados'}</div>
+    </div>
+    <div class="cartao">
+      <div class="rotulo">Patrimônio líquido</div>
+      <div class="valor">${brl(patrimonio?.liquido)}</div>
+      <div class="nota">contas + investimentos − fatura em aberto</div>
+    </div>
+    <div class="cartao">
+      <div class="rotulo">Assinaturas</div>
+      <div class="valor">${brl(assinaturas?.anual)}</div>
+      <div class="nota">${assinaturas?.quantas ?? 0} detectadas · estimativa anual</div>
+    </div>`;
+
+  barras(document.getElementById('grafico-mes'),
+    porMes.map(m => ({ rotulo: rotuloMes(m.ano, m.mes), total: m.total })),
+    { rotulo: 'rotulo', valor: 'total' });
+
+  barras(document.getElementById('grafico-grupo'),
+    await consultar(`SELECT grupo AS rotulo, sum(valor) AS total FROM gastos
+                     GROUP BY grupo ORDER BY total DESC`),
+    { rotulo: 'rotulo', valor: 'total' });
+
+  barras(document.getElementById('grafico-categoria'),
+    await consultar(`SELECT categoria AS rotulo, sum(valor) AS total FROM gastos
+                     GROUP BY categoria ORDER BY total DESC LIMIT 14`),
+    { rotulo: 'rotulo', valor: 'total' });
+}
+
+// ---------------------------------------------------------------------------
+// Gastos
+// ---------------------------------------------------------------------------
+
+let gastos = [];
+
+async function desenharGastos() {
+  gastos = await consultar(`
+    SELECT id_transacao, CAST(data AS VARCHAR) AS data, ano, mes, instituicao, conta,
+           tipo_de_conta, descricao, estabelecimento, categoria, grupo,
+           coalesce(categoria_pluggy, '') AS categoria_pluggy,
+           CAST(valor AS DOUBLE) AS valor,
+           e_parcelado, parcela_numero, parcela_total
+    FROM gastos ORDER BY data DESC, valor DESC`);
+
+  preencherSelect(document.getElementById('g-mes'),
+    [...new Set(gastos.map(g => `${g.ano}-${String(g.mes).padStart(2, '0')}`))].sort().reverse(),
+    'todos os meses');
+  preencherSelect(document.getElementById('g-instituicao'),
+    [...new Set(gastos.map(g => g.instituicao))].sort(), 'todas as instituições');
+  preencherSelect(document.getElementById('g-grupo'),
+    [...new Set(gastos.map(g => g.grupo))].sort(), 'todos os grupos');
+  preencherSelect(document.getElementById('g-categoria'),
+    [...new Set(gastos.map(g => g.categoria))].sort(), 'todas as categorias');
+
+  ['g-busca', 'g-mes', 'g-instituicao', 'g-grupo', 'g-categoria'].forEach(id =>
+    document.getElementById(id).addEventListener('input', filtrarGastos));
+  document.getElementById('g-limpar').onclick = () => {
+    ['g-busca', 'g-mes', 'g-instituicao', 'g-grupo', 'g-categoria']
+      .forEach(id => document.getElementById(id).value = '');
+    filtrarGastos();
+  };
+  filtrarGastos();
+}
+
+function filtrarGastos() {
+  const busca = document.getElementById('g-busca').value.toLowerCase().trim();
+  const mes = document.getElementById('g-mes').value;
+  const instituicao = document.getElementById('g-instituicao').value;
+  const grupo = document.getElementById('g-grupo').value;
+  const categoria = document.getElementById('g-categoria').value;
+
+  const filtrados = gastos.filter(g =>
+    (!mes || `${g.ano}-${String(g.mes).padStart(2, '0')}` === mes) &&
+    (!instituicao || g.instituicao === instituicao) &&
+    (!grupo || g.grupo === grupo) &&
+    (!categoria || g.categoria === categoria) &&
+    (!busca || `${g.descricao} ${g.estabelecimento}`.toLowerCase().includes(busca)));
+
+  const total = filtrados.reduce((s, g) => s + g.valor, 0);
+  document.getElementById('g-resumo').textContent =
+    `${inteiro.format(filtrados.length)} de ${inteiro.format(gastos.length)} transações · ${brl(total)}`;
+
+  tabela(document.getElementById('g-tabela'), filtrados, [
+    { titulo: 'Data', campo: 'data' },
+    { titulo: 'Instituição', campo: 'instituicao' },
+    { titulo: 'Descrição', desenhar: g =>
+        escapar(g.descricao) + (g.e_parcelado ? ` <span class="etiqueta et-padrao">${g.parcela_numero}/${g.parcela_total}</span>` : '') },
+    { titulo: 'Categoria', campo: 'categoria' },
+    { titulo: 'Grupo', campo: 'grupo' },
+    { titulo: 'Valor', num: true, desenhar: g => brl(g.valor) },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Auditoria — a tela que responde "cadê aquele lançamento?"
+// ---------------------------------------------------------------------------
+
+let transacoes = [];
+
+async function desenharAuditoria() {
+  transacoes = await consultar(`
+    SELECT id_transacao, CAST(data AS VARCHAR) AS data, instituicao, descricao,
+           coalesce(estabelecimento, '') AS estabelecimento,
+           coalesce(categoria_pluggy, '') AS categoria_pluggy,
+           coalesce(id_categoria, '') AS id_categoria,
+           categoria, grupo, origem_da_categoria,
+           CAST(valor AS DOUBLE) AS valor, tipo, situacao,
+           e_pagamento_de_fatura, e_transferencia_propria, e_aplicacao
+    FROM stg_transacoes ORDER BY data DESC`);
+
+  preencherSelect(document.getElementById('a-instituicao'),
+    [...new Set(transacoes.map(t => t.instituicao))].sort(), 'todas as instituições');
+
+  ['a-busca', 'a-instituicao', 'a-situacao', 'a-origem'].forEach(id =>
+    document.getElementById(id).addEventListener('input', filtrarAuditoria));
+  document.getElementById('a-limpar').onclick = () => {
+    ['a-busca', 'a-instituicao', 'a-situacao', 'a-origem']
+      .forEach(id => document.getElementById(id).value = '');
+    filtrarAuditoria();
+  };
+
+  await desenharConciliacao();
+  filtrarAuditoria();
+}
+
+const excluida = t => t.e_pagamento_de_fatura || t.e_transferencia_propria || t.e_aplicacao;
+
+function filtrarAuditoria() {
+  const busca = document.getElementById('a-busca').value.toLowerCase().trim();
+  const instituicao = document.getElementById('a-instituicao').value;
+  const situacao = document.getElementById('a-situacao').value;
+  const origem = document.getElementById('a-origem').value;
+
+  const condicao = {
+    '': () => true,
+    gasto: t => t.valor < 0 && !excluida(t),
+    excluida: t => excluida(t),
+    fatura: t => t.e_pagamento_de_fatura,
+    transferencia: t => t.e_transferencia_propria,
+    aplicacao: t => t.e_aplicacao,
+    credito: t => t.valor > 0,
+  }[situacao];
+
+  const filtradas = transacoes.filter(t =>
+    (!instituicao || t.instituicao === instituicao) &&
+    (!origem || t.origem_da_categoria === origem) &&
+    condicao(t) &&
+    (!busca || `${t.descricao} ${t.estabelecimento} ${t.categoria_pluggy} ${t.id_transacao} ${t.id_categoria}`
+                 .toLowerCase().includes(busca)));
+
+  const soma = filtradas.reduce((s, t) => s + t.valor, 0);
+  document.getElementById('a-resumo').textContent =
+    `${inteiro.format(filtradas.length)} de ${inteiro.format(transacoes.length)} transações · saldo ${brl(soma)}`;
+
+  tabela(document.getElementById('a-tabela'), filtradas, [
+    { titulo: 'Data', campo: 'data' },
+    { titulo: 'Instituição', campo: 'instituicao' },
+    { titulo: 'Descrição', desenhar: t =>
+        escapar(t.descricao) +
+        (t.estabelecimento && t.estabelecimento !== t.descricao
+          ? `<br><span style="color:var(--texto-fraco);font-size:11px">${escapar(t.estabelecimento)}</span>` : '') },
+    { titulo: 'Situação', desenhar: t => {
+        if (t.e_pagamento_de_fatura)  return '<span class="etiqueta et-fatura">fatura</span>';
+        if (t.e_transferencia_propria) return '<span class="etiqueta et-transf">transf. própria</span>';
+        if (t.e_aplicacao)             return '<span class="etiqueta et-aplic">aplicação</span>';
+        if (t.valor > 0)               return '<span class="etiqueta et-padrao">crédito</span>';
+        return '<span class="etiqueta et-gasto">gasto</span>';
+      } },
+    { titulo: 'Categoria', desenhar: t =>
+        `${escapar(t.categoria)} <span class="etiqueta et-${t.origem_da_categoria}">${escapar(t.origem_da_categoria)}</span>` },
+    { titulo: 'Pluggy', desenhar: t =>
+        t.categoria_pluggy
+          ? `${escapar(t.categoria_pluggy)}<br><span style="color:var(--texto-fraco);font-size:11px">${escapar(t.id_categoria)}</span>`
+          : '<span style="color:var(--texto-fraco)">—</span>' },
+    { titulo: 'Valor', num: true, desenhar: t =>
+        `<span class="${t.valor < 0 ? '' : 'ok'}">${brl(t.valor)}</span>` },
+  ]);
+}
+
+/** A prova de que nada some.
+ *
+ *  É o mesmo invariante de conservação que a suíte de testes verifica:
+ *  gasto + excluído == débito bruto. Na tela ele vira auditável a olho nu.
+ */
+async function desenharConciliacao() {
+  const [c] = await consultar(`
+    SELECT
+      CAST(sum(CASE WHEN valor < 0 THEN -valor ELSE 0 END) AS DOUBLE) AS debito_bruto,
+      CAST(sum(CASE WHEN valor < 0 AND e_pagamento_de_fatura THEN -valor ELSE 0 END) AS DOUBLE) AS fatura,
+      CAST(sum(CASE WHEN valor < 0 AND NOT e_pagamento_de_fatura AND e_transferencia_propria THEN -valor ELSE 0 END) AS DOUBLE) AS transferencia,
+      CAST(sum(CASE WHEN valor < 0 AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria AND e_aplicacao THEN -valor ELSE 0 END) AS DOUBLE) AS aplicacao,
+      CAST(sum(CASE WHEN valor < 0 AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria AND NOT e_aplicacao THEN -valor ELSE 0 END) AS DOUBLE) AS gasto
+    FROM stg_transacoes`);
+
+  const soma = c.fatura + c.transferencia + c.aplicacao + c.gasto;
+  const diferenca = Math.abs(c.debito_bruto - soma);
+  const fecha = diferenca < 0.01;
+  const ruido = c.debito_bruto ? (c.debito_bruto - c.gasto) / c.debito_bruto : 0;
+
+  document.getElementById('conciliacao').innerHTML = `
+    <div class="linha"><span>débito bruto na camada raw</span><span>${brl(c.debito_bruto)}</span></div>
+    <div class="linha"><span>− pagamento de fatura</span><span>${brl(c.fatura)}</span></div>
+    <div class="linha"><span>− transferência própria</span><span>${brl(c.transferencia)}</span></div>
+    <div class="linha"><span>− aplicação e resgate</span><span>${brl(c.aplicacao)}</span></div>
+    <div class="linha total"><span>= gasto de verdade</span><span>${brl(c.gasto)}</span></div>
+    <div class="linha" style="margin-top:12px">
+      <span>diferença</span>
+      <span class="${fecha ? 'ok' : 'ruim'}">${brl(diferenca)} ${fecha ? '✓ fecha' : '✗ NÃO FECHA'}</span>
+    </div>
+    <div class="linha"><span>ruído removido</span><span>${(ruido * 100).toFixed(1)}% do bruto</span></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Recorrências
+// ---------------------------------------------------------------------------
+
+async function desenharRecorrencias() {
+  // `ativa` é calculada aqui e não na view porque a view ainda não tem essa
+  // coluna — está anotado como buraco do contrato. Quando `recorrencias` ganhar
+  // `e_ativa`, esta expressão sai daqui e a tela passa a só ler a coluna.
+  const linhas = await consultar(`
+    WITH recente AS (SELECT max(ano * 100 + mes) AS mes_atual FROM gastos)
+    SELECT r.estabelecimento, r.instituicao, r.meses_observados,
+           CAST(r.valor_medio AS DOUBLE) AS valor_medio,
+           CAST(r.variacao AS DOUBLE) AS variacao,
+           CAST(r.custo_anual_estimado AS DOUBLE) AS custo_anual_estimado,
+           r.ultimo_mes,
+           r.ultimo_mes >= (SELECT mes_atual FROM recente) AS ativa
+    FROM recorrencias r ORDER BY r.valor_medio DESC`);
+
+  const ativas = linhas.filter(l => l.ativa);
+  const anualAtivas = ativas.reduce((s, l) => s + l.custo_anual_estimado, 0);
+  const anualTodas = linhas.reduce((s, l) => s + l.custo_anual_estimado, 0);
+
+  document.getElementById('r-resumo').innerHTML =
+    `${ativas.length} ativas custam <strong>${brl(anualAtivas)}</strong>/ano · ` +
+    `incluindo as que pararam de cobrar, ${brl(anualTodas)}/ano`;
+
+  tabela(document.getElementById('r-tabela'), linhas, [
+    { titulo: 'Estabelecimento', campo: 'estabelecimento' },
+    { titulo: 'Instituição', campo: 'instituicao' },
+    { titulo: 'Ativa', desenhar: l => l.ativa
+        ? '<span class="etiqueta et-gasto">sim</span>'
+        : '<span class="etiqueta et-padrao">parou</span>' },
+    { titulo: 'Meses', num: true, campo: 'meses_observados' },
+    { titulo: 'Último', num: true, desenhar: l =>
+        rotuloMes(Math.floor(l.ultimo_mes / 100), l.ultimo_mes % 100) },
+    { titulo: 'Variação', num: true, desenhar: l => (l.variacao * 100).toFixed(1) + '%' },
+    { titulo: 'Valor médio', num: true, desenhar: l => brl(l.valor_medio) },
+    { titulo: 'Custo anual', num: true, desenhar: l => brl(l.custo_anual_estimado) },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Patrimônio
+// ---------------------------------------------------------------------------
+
+async function desenharPatrimonio() {
+  linha(document.getElementById('grafico-patrimonio'),
+    await consultar(`
+      SELECT CAST(data_posicao AS VARCHAR) AS quando,
+             CAST(sum(patrimonio_liquido) AS DOUBLE) AS liquido
+      FROM patrimonio GROUP BY data_posicao ORDER BY data_posicao`),
+    { x: 'quando', y: 'liquido' });
+
+  tabela(document.getElementById('p-tabela'),
+    await consultar(`
+      SELECT instituicao,
+             CAST(saldo_em_conta AS DOUBLE) AS saldo_em_conta,
+             CAST(investido AS DOUBLE) AS investido,
+             CAST(fatura_em_aberto AS DOUBLE) AS fatura_em_aberto,
+             CAST(patrimonio_liquido AS DOUBLE) AS patrimonio_liquido
+      FROM patrimonio
+      WHERE data_posicao = (SELECT max(data_posicao) FROM patrimonio)
+      ORDER BY patrimonio_liquido DESC`),
+    [
+      { titulo: 'Instituição', campo: 'instituicao' },
+      { titulo: 'Em conta', num: true, desenhar: p => brl(p.saldo_em_conta) },
+      { titulo: 'Investido', num: true, desenhar: p => brl(p.investido) },
+      { titulo: 'Fatura em aberto', num: true, desenhar: p => brl(p.fatura_em_aberto) },
+      { titulo: 'Líquido', num: true, desenhar: p => brl(p.patrimonio_liquido) },
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// SQL livre
+// ---------------------------------------------------------------------------
+
+async function rodarSql() {
+  const erro = document.getElementById('sql-erro');
+  const resumo = document.getElementById('sql-resumo');
+  erro.innerHTML = '';
+  resumo.textContent = 'rodando…';
+  const inicio = performance.now();
+  try {
+    const linhas = await consultar(document.getElementById('sql-texto').value);
+    const ms = (performance.now() - inicio).toFixed(0);
+    resumo.textContent = `${inteiro.format(linhas.length)} linhas em ${ms} ms`;
+    tabela(document.getElementById('sql-tabela'), linhas.slice(0, 1000),
+      Object.keys(linhas[0] ?? {}).map(c => ({
+        titulo: c,
+        desenhar: l => typeof l[c] === 'number' ? escapar(l[c].toLocaleString('pt-BR')) : escapar(l[c]),
+        num: typeof (linhas[0] ?? {})[c] === 'number',
+      })));
+  } catch (e) {
+    resumo.textContent = '';
+    erro.innerHTML = `<div class="erro">${escapar(e.message || e)}</div>`;
+  }
+}
+
+document.getElementById('sql-rodar').onclick = rodarSql;
+document.getElementById('sql-texto').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') rodarSql();
+});
+
+// ---------------------------------------------------------------------------
+// Arranque
+// ---------------------------------------------------------------------------
+
+async function principal() {
+  const carregando = document.getElementById('carregando');
+  try {
+    const manifesto = await (await fetch('dados/manifesto.json')).json();
+
+    document.getElementById('periodo').textContent =
+      manifesto.periodo.primeira_transacao
+        ? `${manifesto.periodo.primeira_transacao} → ${manifesto.periodo.ultima_transacao}`
+        : '';
+    const gerado = new Date(manifesto.gerado_em);
+    document.getElementById('meta').textContent =
+      `publicado em ${gerado.toLocaleString('pt-BR')} · ` +
+      `${inteiro.format(manifesto.linhas.stg_transacoes)} transações · ` +
+      `retrato, não tempo real — rode 'financas publicar' para atualizar`;
+
+    document.getElementById('avisos').innerHTML =
+      (manifesto.avisos || []).map(a => `<div class="aviso">${escapar(a)}</div>`).join('');
+
+    await iniciar();
+    carregando.remove();
+    document.getElementById('aba-visao').classList.add('ativa');
+
+    await desenharVisao();
+    await desenharGastos();
+    await desenharAuditoria();
+    await desenharRecorrencias();
+    await desenharPatrimonio();
+  } catch (e) {
+    carregando.innerHTML = `<div class="erro">Não consegui carregar.
+
+${escapar(e.message || e)}
+
+Checklist:
+  1. Rodou 'python -m financas publicar'?
+  2. Está acessando por http:// e não file://?
+     O DuckDB-WASM usa Web Workers e range requests — os dois exigem origem HTTP.
+     Use: python -m financas publicar --servir
+  3. O diretório dados/ existe ao lado deste index.html?</div>`;
+  }
+}
+
+principal();
+</script>
+</body>
+</html>

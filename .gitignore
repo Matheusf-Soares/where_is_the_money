@@ -12,6 +12,10 @@ config/regras.toml
 # Fixtures baixadas da API real (as sintéticas de tests/fixtures são versionadas).
 fixtures_reais/
 
+# Parquet publicado para o frontend: é o extrato inteiro, em arquivo.
+frontend/dados/
+*.parquet
+
 # Python
 __pycache__/
 *.py[cod]

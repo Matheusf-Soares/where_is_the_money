@@ -33,6 +33,7 @@ from financas.frescor import atrasadas, verificar_frescor
 from financas.ingestao import ingerir
 from financas.persistencia import Banco
 from financas.pluggy import ErroPluggy, criar_cliente
+from financas.publicacao import ErroDePublicacao, publicar, servir
 from financas.views import ErroDeView, aplicar_views
 
 SAIDA_OK = 0
@@ -73,6 +74,9 @@ def main(
         return SAIDA_ERRO
     except ErroDeView as erro:
         print(f"erro ao aplicar view: {erro}", file=sys.stderr)
+        return SAIDA_ERRO
+    except ErroDePublicacao as erro:
+        print(f"erro ao publicar: {erro}", file=sys.stderr)
         return SAIDA_ERRO
 
 
@@ -158,6 +162,36 @@ def comando_frescor(argumentos: argparse.Namespace, config: Configuracao) -> int
             file=sys.stderr,
         )
         return SAIDA_DADOS_VELHOS
+
+    return SAIDA_OK
+
+
+def comando_publicar(argumentos: argparse.Namespace, config: Configuracao) -> int:
+    """Exporta as views para o frontend e, opcionalmente, sobe o servidor."""
+    frontend = argumentos.frontend or (raiz_do_projeto().parent / "frontend")
+    destino = argumentos.destino or (frontend / "dados")
+
+    with Banco.abrir(config.caminho_banco) as banco:
+        banco.criar_schema()
+        resultado = publicar(banco, destino)
+
+    print(f"publicado em {destino}")
+    for tabela, quantas in resultado.linhas.items():
+        print(f"  {tabela:<20} {quantas:>7} linhas")
+
+    if resultado.avisos:
+        print(file=sys.stderr)
+        for aviso in resultado.avisos:
+            print(f"AVISO  {aviso}", file=sys.stderr)
+
+    if argumentos.servir:
+        print()
+        servir(frontend, argumentos.porta)
+    else:
+        print(
+            f"\nPara abrir: python -m financas publicar --servir\n"
+            f"(o navegador não consegue ler os Parquet por file://)"
+        )
 
     return SAIDA_OK
 
@@ -351,6 +385,25 @@ def construir_analisador() -> argparse.ArgumentParser:
         "--hoje", type=_data, help="data de referência (padrão: hoje)"
     )
     frescor_.set_defaults(executar=comando_frescor)
+
+    publicar_ = sub.add_parser(
+        "publicar", help="exporta as views para o frontend estático"
+    )
+    publicar_.add_argument(
+        "--frontend", type=Path, help="raiz do frontend (padrão: ../frontend)"
+    )
+    publicar_.add_argument(
+        "--destino", type=Path, help="onde gravar os Parquet (padrão: <frontend>/dados)"
+    )
+    publicar_.add_argument(
+        "--servir",
+        action="store_true",
+        help="sobe um servidor local depois de publicar (DuckDB-WASM exige http)",
+    )
+    publicar_.add_argument(
+        "--porta", type=int, default=8000, help="porta do servidor (padrão: 8000)"
+    )
+    publicar_.set_defaults(executar=comando_publicar)
 
     categorias_ = sub.add_parser(
         "categorias", help="gera o de-para da fase 2, ou audita o que já existe"

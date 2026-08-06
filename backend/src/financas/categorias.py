@@ -158,7 +158,7 @@ def auditar(banco: Banco) -> Auditoria:
 
     sem_de_para = banco.conexao.execute(
         """
-        SELECT t.id_categoria, max(t.categoria), count(*)
+        SELECT t.id_categoria, max(t.categoria_pluggy), count(*)
         FROM stg_transacoes t
         WHERE t.origem_da_categoria = 'padrao'
           AND t.id_categoria IS NOT NULL

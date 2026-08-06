@@ -30,7 +30,7 @@ categorização e não permitem séries históricas customizadas.
 |---|---|---|
 | **1** | Ingestão, persistência, views SQL, testes, CLI | ✅ completa — 224 testes passando |
 | **2** | Categorização própria sobre a categoria da Pluggy | em andamento — resolução em 3 camadas pronta |
-| **3** | Frontend consumindo as views | não iniciada — `frontend/` está vazia |
+| **3** | Frontend consumindo as views | ✅ estático + DuckDB-WASM, 6 abas |
 | **4** | *(talvez)* migração para GCP com execução agendada | — |
 
 A fase 1 nunca foi validada contra a API real. Isso é feito por mim, fora deste
@@ -289,8 +289,13 @@ python -m financas ingerir     # baixa e grava na camada raw
 python -m financas views       # recarrega cfg_* e aplica os .sql
 python -m financas frescor     # alguém parou de trazer dado novo?
 python -m financas categorias  # regra morta e cobertura da categorização
+python -m financas publicar    # exporta as views em Parquet para o frontend
 python -m financas status      # o que existe no banco
 ```
+
+Para ver o dashboard: `python -m financas publicar --servir` e abrir
+`http://127.0.0.1:8000`. **Não abra o `index.html` por `file://`** — o
+DuckDB-WASM usa Web Workers e range requests, e os dois exigem origem HTTP.
 
 Flags globais: `--modo online|offline`, `--banco CAMINHO`, `-v` (ou `-vv`).
 `ingerir` aceita `--desde` e `--hoje`; `frescor`, `--hoje`; `categorias`,

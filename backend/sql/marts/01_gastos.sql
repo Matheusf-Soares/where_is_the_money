@@ -29,7 +29,13 @@ SELECT
     c.tipo                                  AS tipo_de_conta,
     c.nome                                  AS conta,
     t.descricao,
+    -- Fase 2. `categoria` é a SUA, resolvida em stg_transacoes pelas três
+    -- camadas; `categoria_pluggy` é a que a API devolveu, mantida ao lado para
+    -- auditar o de-para e descobrir id que ainda falta mapear.
     t.categoria,
+    t.grupo,
+    t.categoria_pluggy,
+    t.origem_da_categoria,
     coalesce(t.estabelecimento, t.descricao) AS estabelecimento,
     -t.valor                                AS valor,
     t.moeda,
