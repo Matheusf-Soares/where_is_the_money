@@ -329,6 +329,7 @@ Pensados para `cron` e script, onde ninguém lê a saída na hora:
 | `2` | **alguma instituição parou de atualizar** (armadilha 4) |
 | `3` | ingestão parcial: pelo menos uma instituição falhou |
 | `4` | regra de categoria que nunca casou: filtro que não filtra |
+| `5` | **a API respondeu mas não havia nada para ingerir** |
 
 ### Configuração: duas fontes
 

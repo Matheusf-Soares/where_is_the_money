@@ -41,6 +41,7 @@ SAIDA_ERRO = 1            # configuração inválida, uso errado, falha inespera
 SAIDA_DADOS_VELHOS = 2    # alguma instituição parou de atualizar (armadilha 4)
 SAIDA_INGESTAO_PARCIAL = 3  # pelo menos uma instituição falhou
 SAIDA_CONFIG_MORTA = 4    # regra que nunca casa: filtro que não filtra
+SAIDA_SEM_DADOS = 5       # a API respondeu, mas não havia nada para ingerir
 
 registrador = logging.getLogger("financas")
 
@@ -112,7 +113,54 @@ def comando_ingerir(argumentos: argparse.Namespace, config: Configuracao) -> int
         )
         return SAIDA_INGESTAO_PARCIAL
 
+    # Ingestão que não traz nada e sai com código 0 é a falha silenciosa que
+    # este projeto existe para combater: o banco fica vazio, as views rodam, o
+    # dashboard abre mostrando R$ 0,00 e nada em lugar nenhum diz que houve
+    # problema. A API respondeu — só não havia o que responder.
+    if resumo.itens == 0:
+        print(file=sys.stderr)
+        print(_DIAGNOSTICO_SEM_ITENS.format(modo=config.modo), file=sys.stderr)
+        return SAIDA_SEM_DADOS
+
+    if resumo.contas == 0:
+        print(file=sys.stderr)
+        print(
+            f"{resumo.itens} conexão(ões) encontrada(s), mas nenhuma conta dentro "
+            f"delas.\n\n"
+            f"Isso costuma ser item em estado de erro ou aguardando MFA. Confira o "
+            f"status de cada conexão em meu.pluggy.ai; se alguma pedir "
+            f"reautorização, refaça e rode de novo.",
+            file=sys.stderr,
+        )
+        return SAIDA_SEM_DADOS
+
     return SAIDA_OK
+
+
+_DIAGNOSTICO_SEM_ITENS = """\
+NADA FOI INGERIDO: GET /items devolveu uma lista vazia.
+
+A autenticação funcionou — a API respondeu. O que não existe é conexão
+autorizada dentro da aplicação cujas credenciais estão no .env.
+
+A causa quase sempre é a confusão entre os dois portais da Pluggy, que têm
+contas de login SEPARADAS:
+
+  meu.pluggy.ai        onde você, como titular, autoriza os bancos
+  dashboard.pluggy.ai  onde você, como desenvolvedor, cria a aplicação
+                       e pega o PLUGGY_CLIENT_ID / SECRET
+
+Autorizar os bancos no Meu Pluggy não os torna visíveis para a sua aplicação.
+A ponte entre os dois é o conector MeuPluggy (id 200): dentro da aplicação
+criada no Dashboard, é preciso criar um item com esse conector, autenticando
+com a sua conta do Meu Pluggy. É isso que expõe, para a API, os dados que você
+já autorizou do outro lado.
+
+Confira também:
+  - o .env aponta para a aplicação certa, se você tiver mais de uma;
+  - a aplicação está no ambiente de Desenvolvimento;
+  - o modo atual é '{modo}' (use --modo online para falar com a API real).\
+"""
 
 
 def comando_views(argumentos: argparse.Namespace, config: Configuracao) -> int:

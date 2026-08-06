@@ -18,6 +18,7 @@ from financas.cli import (
     SAIDA_ERRO,
     SAIDA_INGESTAO_PARCIAL,
     SAIDA_OK,
+    SAIDA_SEM_DADOS,
     main,
 )
 
@@ -25,14 +26,56 @@ from conftest import FIXTURES_PLUGGY, RAIZ
 
 
 # ---------------------------------------------------------------------------
-# Empacotamento
+# Ingestão vazia e empacotamento
 #
-# O que estes dois testes protegem não é código, é a instalação. `python -m
-# financas` só encontra o pacote depois de `pip install -e .`, e o
-# `pythonpath = ["src"]` do pyproject vale **só para o pytest** — a suíte
-# inteira passava enquanto o comando documentado no README morria com
-# "No module named financas".
+# Os dois blocos abaixo protegem coisas que a suíte não pegava: uma ingestão
+# que não traz nada mas sai com código 0, e uma instalação que faz `python -m
+# financas` morrer com "No module named financas" enquanto todos os testes
+# passam (o `pythonpath` do pyproject vale só para o pytest).
 # ---------------------------------------------------------------------------
+
+
+def test_ingerir_sem_itens_falha_alto(tmp_path, projeto) -> None:
+    """Ingestão vazia não pode sair com 0.
+
+    O banco fica vazio, as views rodam sem erro, o dashboard abre mostrando
+    R$ 0,00 — e nada em lugar nenhum diz que houve problema. É a falha
+    silenciosa que este projeto existe para combater.
+    """
+    fixtures_vazias = tmp_path / "vazio"
+    fixtures_vazias.mkdir()
+    (fixtures_vazias / "items.json").write_text("[]", encoding="utf-8")
+
+    codigo = main(
+        ["--banco", str(tmp_path / "b.duckdb"), "ingerir", "--hoje", "2025-09-20"],
+        ambiente={"FINANCAS_FIXTURES": str(fixtures_vazias)},
+        raiz=projeto,
+    )
+
+    assert codigo == SAIDA_SEM_DADOS
+
+
+def test_diagnostico_de_lista_vazia_explica_os_dois_portais(capsys, tmp_path, projeto) -> None:
+    """A mensagem precisa apontar a causa real, não só constatar o vazio.
+
+    Quase sempre é a confusão entre meu.pluggy.ai e dashboard.pluggy.ai: os
+    bancos foram autorizados de um lado e a aplicação vive do outro, sem o item
+    do conector MeuPluggy fazendo a ponte.
+    """
+    fixtures_vazias = tmp_path / "vazio"
+    fixtures_vazias.mkdir()
+    (fixtures_vazias / "items.json").write_text("[]", encoding="utf-8")
+
+    main(
+        ["--banco", str(tmp_path / "b.duckdb"), "ingerir", "--hoje", "2025-09-20"],
+        ambiente={"FINANCAS_FIXTURES": str(fixtures_vazias)},
+        raiz=projeto,
+    )
+    erro = capsys.readouterr().err
+
+    assert "MeuPluggy" in erro
+    assert "dashboard.pluggy.ai" in erro
+    assert "meu.pluggy.ai" in erro
 
 
 def test_pyproject_declara_como_instalar() -> None:
