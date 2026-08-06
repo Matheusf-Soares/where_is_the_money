@@ -102,27 +102,48 @@ def _achados_do_jwt(chave: str) -> list[Achado]:
         return [Achado("apiKey", "não é um JWT decodificável (isso é normal)")]
 
     achados = [Achado("claims da apiKey", ", ".join(sorted(claims)))]
+    achados.extend(_linhas_de_claims(claims, prefixo="  claim "))
+    return achados
+
+
+def _linhas_de_claims(claims: dict[str, Any], *, prefixo: str) -> list[Achado]:
+    """Achata um nível de claims em linhas do relatório.
+
+    A Pluggy aninha o contexto da aplicação num claim `data`, e é lá que moram
+    plano, ambiente e escopo — justamente o que decide um 401. Mostrar só o nome
+    do claim de fora esconderia a resposta um nível abaixo.
+    """
+    from datetime import datetime, timezone
+
+    linhas: list[Achado] = []
 
     for nome in sorted(claims):
+        valor = claims[nome]
+
+        if isinstance(valor, dict):
+            linhas.append(Achado(f"{prefixo}{nome}", ", ".join(sorted(valor)) or "vazio"))
+            linhas.extend(_linhas_de_claims(valor, prefixo=f"{prefixo}{nome}."))
+            continue
+
         if nome not in CLAIMS_SEGUROS:
             continue
-        valor = claims[nome]
-        if nome in ("exp", "iat", "nbf") and isinstance(valor, (int, float)):
-            from datetime import datetime, timezone
 
+        if nome in ("exp", "iat", "nbf") and isinstance(valor, (int, float)):
             quando = datetime.fromtimestamp(valor, tz=timezone.utc)
             vencida = nome == "exp" and quando < datetime.now(tz=timezone.utc)
-            achados.append(
+            linhas.append(
                 Achado(
-                    f"  claim {nome}",
+                    f"{prefixo}{nome}",
                     quando.isoformat() + ("  <-- JÁ VENCIDA" if vencida else ""),
                     ok=False if vencida else None,
                 )
             )
         else:
-            achados.append(Achado(f"  claim {nome}", json.dumps(valor, ensure_ascii=False)[:160]))
+            linhas.append(
+                Achado(f"{prefixo}{nome}", json.dumps(valor, ensure_ascii=False)[:160])
+            )
 
-    return achados
+    return linhas
 
 
 def _corpo(resposta: httpx.Response, limite: int = 400) -> str:

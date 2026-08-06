@@ -265,3 +265,25 @@ def test_apikey_que_nao_e_jwt_nao_quebra(config, monkeypatch) -> None:
     saida = texto(rodar(config, atender, monkeypatch))
 
     assert "não é um JWT decodificável" in saida
+
+
+def test_claim_aninhado_e_expandido(config, monkeypatch) -> None:
+    """A Pluggy aninha o contexto da aplicação num claim `data`.
+
+    Plano, ambiente e escopo moram lá dentro — justamente o que decide um 401.
+    Mostrar só o nome do claim de fora esconderia a resposta um nível abaixo.
+    """
+    chave = _jwt(
+        {"data": {"clientId": "abc", "plan": "FREE", "environment": "DEVELOPMENT"}}
+    )
+
+    def atender(requisicao: httpx.Request) -> httpx.Response:
+        if requisicao.url.path == "/auth":
+            return httpx.Response(200, json={"apiKey": chave})
+        return httpx.Response(401, json={"message": "Unauthorized"})
+
+    saida = texto(rodar(config, atender, monkeypatch))
+
+    assert "clientId, environment, plan" in saida   # os nomes de dentro
+    assert "FREE" in saida and "DEVELOPMENT" in saida
+    assert "abc" not in saida.replace("clientId", "")  # identidade, não
