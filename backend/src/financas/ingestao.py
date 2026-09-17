@@ -33,12 +33,71 @@ from financas.pluggy import Cliente, ErroPluggy
 registrador = logging.getLogger(__name__)
 
 
+# Estados em que o item está são. Qualquer outro é reportado.
+STATUS_SAUDAVEL = "UPDATED"
+EXECUCOES_SAUDAVEIS = ("SUCCESS", "PARTIAL_SUCCESS")
+
+# Item cujo id não existe mais. É o único estado em que não há o que buscar,
+# porque nem o item existe — então vira falha, não aviso.
+STATUS_INEXISTENTE = "NOT_FOUND"
+
+
 @dataclass(frozen=True)
 class FalhaDeInstituicao:
     """Uma instituição que não pôde ser lida por inteiro."""
 
     instituicao: str
     motivo: str
+
+
+@dataclass(frozen=True)
+class ItemDegradado:
+    """Conexão que respondeu, mas está pedindo socorro.
+
+    Diferente de `FalhaDeInstituicao`: aqui o dado pode ter vindo. O que a API
+    está dizendo é que a conexão não vai durar — MFA pendente, senha trocada,
+    login falhando. Avisar agora é o que evita descobrir pelo `frescor` uma
+    semana depois, com uma semana de extrato faltando.
+    """
+
+    instituicao: str
+    id_item: str
+    diagnostico: str
+
+
+def _problema_do_item(item: dict[str, Any]) -> str:
+    """Descreve o que está errado com um item, ou string vazia se está são.
+
+    Lê só o que a API já devolveu. Nenhuma requisição a mais.
+    """
+    partes: list[str] = []
+
+    status = str(item.get("status") or "").strip()
+    if status and status != STATUS_SAUDAVEL:
+        partes.append(f"status={status}")
+
+    execucao = str(item.get("executionStatus") or "").strip()
+    if execucao and execucao not in EXECUCOES_SAUDAVEIS:
+        partes.append(f"execução={execucao}")
+
+    acao = item.get("userAction")
+    if acao:
+        partes.append(f"EXIGE AÇÃO SUA: {str(acao)[:120]}")
+
+    erro = item.get("error")
+    if erro:
+        mensagem = erro.get("message") if isinstance(erro, dict) else erro
+        partes.append(f"erro={str(mensagem)[:120]}")
+
+    tentativas = item.get("consecutiveFailedLoginAttempts")
+    if isinstance(tentativas, int) and not isinstance(tentativas, bool) and tentativas > 0:
+        partes.append(f"{tentativas} login(s) falhado(s) em sequência")
+
+    detalhe = item.get("statusDetail")
+    if detalhe:
+        partes.append(f"detalhe={str(detalhe)[:120]}")
+
+    return "; ".join(partes)
 
 
 @dataclass(frozen=True)
@@ -51,10 +110,15 @@ class ResumoDaIngestao:
     contas_gravadas: ResultadoUpsert
     investimentos: ResultadoUpsert
     falhas: tuple[FalhaDeInstituicao, ...] = field(default=())
+    degradados: tuple[ItemDegradado, ...] = field(default=())
 
     @property
     def houve_falha(self) -> bool:
         return bool(self.falhas)
+
+    @property
+    def houve_degradacao(self) -> bool:
+        return bool(self.degradados)
 
     def linhas(self) -> list[str]:
         return [
@@ -88,6 +152,7 @@ def ingerir(
 
     itens = cliente.listar_itens()
     falhas: list[FalhaDeInstituicao] = []
+    degradados: list[ItemDegradado] = []
     resultados: dict[str, list[ResultadoUpsert]] = {
         "raw_transacoes": [],
         "raw_contas": [],
@@ -95,9 +160,32 @@ def ingerir(
     }
     total_de_contas = 0
 
+    # O nome configurado vence o do conector; ver `nome_da_instituicao`.
+    rotulos = {i.id.lower(): i.instituicao for i in regras.itens}
+
     for item in itens:
         id_item = item.get("id", "")
-        instituicao = nome_da_instituicao(item)
+        instituicao = nome_da_instituicao(item, rotulos.get(str(id_item).lower(), ""))
+
+        # A saúde é avaliada antes de buscar: um item cujo id não existe mais
+        # não tem conta nenhuma para percorrer, e insistir só gastaria
+        # requisição para receber lista vazia.
+        problema = _problema_do_item(item)
+        if str(item.get("status") or "") == STATUS_INEXISTENTE:
+            registrador.error("%s: %s", instituicao, problema)
+            falhas.append(
+                FalhaDeInstituicao(
+                    instituicao,
+                    f"itemId {id_item} não existe mais. Reautorizar gera um id "
+                    f"novo (armadilha 8): pegue o atual em dashboard.pluggy.ai "
+                    f"e troque no regras.toml.",
+                )
+            )
+            continue
+        if problema:
+            registrador.warning("%s: %s", instituicao, problema)
+            degradados.append(ItemDegradado(instituicao, id_item, problema))
+
         try:
             contas, transacoes, investimentos = _coletar(
                 cliente, item, id_item, instituicao, inicio, hoje
@@ -132,6 +220,7 @@ def ingerir(
             "raw_investimentos", resultados["raw_investimentos"]
         ),
         falhas=tuple(falhas),
+        degradados=tuple(degradados),
     )
 
 

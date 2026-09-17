@@ -93,17 +93,17 @@ categoria = "Transporte"
 grupo = "Variável"
 
 [[mapa_categoria]]
-id_categoria = "05070000"
+id_categoria = "09020000"
 categoria = "Streaming (mapa)"
 grupo = "Lazer"
 
 [[mapa_categoria]]
-id_categoria = "05010000"
+id_categoria = "10000000"
 categoria = "Mercado"
 grupo = "Essencial"
 
 [[mapa_categoria]]
-id_categoria = "05060000"
+id_categoria = "07030001"
 categoria = "Academia"
 grupo = "Fixo"
 """

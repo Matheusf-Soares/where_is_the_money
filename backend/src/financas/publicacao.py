@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,8 +94,14 @@ def publicar(
         arquivo = destino / f"{tabela}.parquet"
         # COPY do próprio DuckDB: sem pandas no meio, sem conversão de tipo
         # perdendo a precisão do DECIMAL.
+        #
+        # O caminho vai como parâmetro em vez de interpolado: `--destino` vem da
+        # linha de comando, e um diretório com apóstrofo no nome fecharia a
+        # string do SQL. O nome da tabela continua interpolado porque vem de
+        # TABELAS_PUBLICADAS, que é constante deste módulo.
         banco.conexao.execute(
-            f"COPY (SELECT * FROM {tabela}) TO '{arquivo.as_posix()}' (FORMAT PARQUET)"
+            f"COPY (SELECT * FROM {tabela}) TO ? (FORMAT PARQUET)",
+            [arquivo.as_posix()],
         )
         (quantas,) = banco.conexao.execute(f"SELECT count(*) FROM {tabela}").fetchone()
         linhas[tabela] = int(quantas)
@@ -148,12 +153,14 @@ def _avisos(banco: Banco, linhas: dict[str, int]) -> tuple[str, ...]:
 
     (sem_categoria,) = banco.conexao.execute(
         "SELECT count(*) FROM stg_transacoes "
-        "WHERE origem_da_categoria = 'padrao' AND valor < 0 "
+        "WHERE origem_da_categoria = 'padrao' AND valor_assinado < 0 "
+        "  AND NOT e_futura "
         "  AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria "
         "  AND NOT e_aplicacao"
     ).fetchone()
     consideradas = banco.conexao.execute(
-        "SELECT count(*) FROM stg_transacoes WHERE valor < 0 "
+        "SELECT count(*) FROM stg_transacoes WHERE valor_assinado < 0 "
+        "  AND NOT e_futura "
         "  AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria "
         "  AND NOT e_aplicacao"
     ).fetchone()[0]
@@ -232,11 +239,3 @@ def servir(diretorio: Path, porta: int) -> None:
         except KeyboardInterrupt:
             print("\nparado.")
 
-
-def copiar_frontend(origem: Path, destino: Path) -> None:
-    """Copia o frontend estático para junto dos dados publicados."""
-    if not origem.is_dir():
-        raise ErroDePublicacao(f"frontend não encontrado em {origem}")
-    for arquivo in origem.iterdir():
-        if arquivo.is_file():
-            shutil.copy2(arquivo, destino / arquivo.name)

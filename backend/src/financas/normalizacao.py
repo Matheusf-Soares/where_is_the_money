@@ -30,14 +30,21 @@ from typing import Any
 INSTITUICAO_DESCONHECIDA = "Desconhecida"
 
 
-def nome_da_instituicao(item: dict[str, Any]) -> str:
-    """Nome da instituição de um item, lido do conector.
+def nome_da_instituicao(item: dict[str, Any], configurado: str = "") -> str:
+    """Nome da instituição de um item.
 
-    É a única informação de instituição que a API oferece, e ela não vem junto
-    das transações — por isso é propagada na travessia `item → conta → transação`
-    e gravada em cada linha. Não é regra de negócio, é procedência: sem ela, a
-    armadilha 1 não teria como aplicar um padrão de fatura por instituição.
+    Propagada na travessia `item → conta → transação` e gravada em cada linha,
+    porque a API não devolve instituição junto da transação. Não é regra de
+    negócio, é procedência: sem ela, a armadilha 1 não teria como aplicar um
+    padrão de fatura por instituição.
+
+    `configurado` vence o conector, e precisa vencer: com o conector MeuPluggy
+    (200), que é agregador, `connector.name` devolve "MeuPluggy" para todos os
+    items. Confiar nele faria as cinco instituições virarem uma só.
     """
+    if configurado.strip():
+        return configurado.strip()
+
     conector = item.get("connector")
     if isinstance(conector, dict):
         nome = conector.get("name")
@@ -49,7 +56,15 @@ def nome_da_instituicao(item: dict[str, Any]) -> str:
 def normalizar_transacao(
     bruto: dict[str, Any], *, id_item: str, instituicao: str
 ) -> dict[str, Any]:
-    """Converte uma transação da API em uma linha de `raw_transacoes`."""
+    """Converte uma transação da API em uma linha de `raw_transacoes`.
+
+    Não há chave Pix aqui, e a ausência é deliberada: `paymentData` não tem
+    campo `pixKey`. A contraparte de um Pix é identificada por `name` e por
+    `documentNumber.value` — que são os campos lidos abaixo — ou pelo texto da
+    descrição. Uma versão anterior lia `paymentData.receiver.pixKey`, que só
+    existia nas fixtures; contra a API real a coluna vinha sempre nula, e os
+    testes de transferência própria passavam sem exercitar nada.
+    """
     return {
         "id": _texto(bruto.get("id")),
         "id_conta": _texto(bruto.get("accountId")),
@@ -74,7 +89,6 @@ def normalizar_transacao(
         "recebedor_documento": _texto(
             _em(bruto, "paymentData", "receiver", "documentNumber", "value")
         ),
-        "recebedor_chave_pix": _texto(_em(bruto, "paymentData", "receiver", "pixKey")),
         "estabelecimento_nome": _texto(_em(bruto, "merchant", "name")),
         "estabelecimento_cnpj": _texto(_em(bruto, "merchant", "cnpj")),
         "cartao_final": _texto(_em(bruto, "creditCardMetadata", "cardNumber")),

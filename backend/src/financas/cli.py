@@ -21,6 +21,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from datetime import date
 from pathlib import Path
+from typing import NoReturn
 
 from financas.categorias import auditar, gerar_de_para
 from financas.config import (
@@ -29,7 +30,11 @@ from financas.config import (
     carregar_configuracao,
     raiz_do_projeto,
 )
-from financas.diagnostico import INTERPRETACAO_401, diagnosticar
+from financas.diagnostico import (
+    INTERPRETACAO_401,
+    diagnosticar,
+    diagnosticar_item,
+)
 from financas.frescor import atrasadas, verificar_frescor
 from financas.ingestao import ingerir
 from financas.persistencia import Banco
@@ -43,8 +48,24 @@ SAIDA_DADOS_VELHOS = 2    # alguma instituição parou de atualizar (armadilha 4
 SAIDA_INGESTAO_PARCIAL = 3  # pelo menos uma instituição falhou
 SAIDA_CONFIG_MORTA = 4    # regra que nunca casa: filtro que não filtra
 SAIDA_SEM_DADOS = 5       # a API respondeu, mas não havia nada para ingerir
+SAIDA_ITEM_DEGRADADO = 6  # uma conexão pediu ação sua (MFA, senha, reautorizar)
 
 registrador = logging.getLogger("financas")
+
+
+def _avisar(*linhas: object) -> None:
+    """Escreve em stderr depois de esvaziar stdout.
+
+    Quando a saída não é um terminal — que é o caso em `cron`, o uso para o
+    qual os códigos de saída foram pensados — o Python bufferiza stdout em
+    bloco e deixa stderr sem buffer. Redirecionar os dois para o mesmo arquivo
+    fazia o resumo do erro aparecer ANTES da lista que ele resume, e relatório
+    fora de ordem é relatório que ninguém lê direito.
+    """
+    sys.stdout.flush()
+    for linha in linhas:
+        print(linha, file=sys.stderr)
+    sys.stderr.flush()
 
 
 def main(
@@ -66,19 +87,19 @@ def main(
     try:
         config = _carregar(argumentos, ambiente, raiz)
     except ErroDeConfiguracao as erro:
-        print(erro, file=sys.stderr)
+        _avisar(erro)
         return SAIDA_ERRO
 
     try:
         return argumentos.executar(argumentos, config)
     except ErroPluggy as erro:
-        print(f"erro na API da Pluggy: {erro}", file=sys.stderr)
+        _avisar(f"erro na API da Pluggy: {erro}")
         return SAIDA_ERRO
     except ErroDeView as erro:
-        print(f"erro ao aplicar view: {erro}", file=sys.stderr)
+        _avisar(f"erro ao aplicar view: {erro}")
         return SAIDA_ERRO
     except ErroDePublicacao as erro:
-        print(f"erro ao publicar: {erro}", file=sys.stderr)
+        _avisar(f"erro ao publicar: {erro}")
         return SAIDA_ERRO
 
 
@@ -91,10 +112,9 @@ def comando_ingerir(argumentos: argparse.Namespace, config: Configuracao) -> int
     """Baixa da fonte configurada e grava na camada raw."""
     hoje = argumentos.hoje or date.today()
 
-    with Banco.abrir(config.caminho_banco) as banco:
+    with Banco.abrir(config.caminho_banco) as banco, criar_cliente(config) as cliente:
         banco.criar_schema()
         banco.gravar_regras(config.regras)
-        cliente = criar_cliente(config)
         resumo = ingerir(
             cliente, banco, config.regras, hoje=hoje, desde=argumentos.desde
         )
@@ -104,13 +124,11 @@ def comando_ingerir(argumentos: argparse.Namespace, config: Configuracao) -> int
         print(linha)
 
     if resumo.houve_falha:
-        print(file=sys.stderr)
-        for falha in resumo.falhas:
-            print(f"FALHOU  {falha.instituicao}: {falha.motivo}", file=sys.stderr)
-        print(
+        _avisar(
+            "",
+            *(f"FALHOU  {falha.instituicao}: {falha.motivo}" for falha in resumo.falhas),
             "\nAs demais instituições foram gravadas. Resolva o problema e rode "
             "de novo: a ingestão é idempotente e completa o que faltou.",
-            file=sys.stderr,
         )
         return SAIDA_INGESTAO_PARCIAL
 
@@ -119,21 +137,35 @@ def comando_ingerir(argumentos: argparse.Namespace, config: Configuracao) -> int
     # dashboard abre mostrando R$ 0,00 e nada em lugar nenhum diz que houve
     # problema. A API respondeu — só não havia o que responder.
     if resumo.itens == 0:
-        print(file=sys.stderr)
-        print(_DIAGNOSTICO_SEM_ITENS.format(modo=config.modo), file=sys.stderr)
+        _avisar("", _DIAGNOSTICO_SEM_ITENS.format(modo=config.modo))
         return SAIDA_SEM_DADOS
 
     if resumo.contas == 0:
-        print(file=sys.stderr)
-        print(
+        _avisar(
+            "",
             f"{resumo.itens} conexão(ões) encontrada(s), mas nenhuma conta dentro "
             f"delas.\n\n"
             f"Isso costuma ser item em estado de erro ou aguardando MFA. Confira o "
             f"status de cada conexão em meu.pluggy.ai; se alguma pedir "
             f"reautorização, refaça e rode de novo.",
-            file=sys.stderr,
         )
         return SAIDA_SEM_DADOS
+
+    # Conexão degradada não impede a ingestão de hoje, mas avisa que a de
+    # amanhã pode não acontecer. Sai diferente de zero de propósito: é o único
+    # jeito de um cron perceber.
+    if resumo.houve_degradacao:
+        _avisar(
+            "",
+            *(
+                f"ATENÇÃO  {d.instituicao} ({d.id_item[:8]}…): {d.diagnostico}"
+                for d in resumo.degradados
+            ),
+            "\nOs dados de hoje foram gravados. Mas a API está sinalizando que "
+            "essas conexões precisam de ação sua — normalmente reautorizar em "
+            "meu.pluggy.ai. Sem isso elas vão parar de trazer dado novo.",
+        )
+        return SAIDA_ITEM_DEGRADADO
 
     return SAIDA_OK
 
@@ -156,6 +188,19 @@ A ponte entre os dois é o conector MeuPluggy (id 200): dentro da aplicação
 criada no Dashboard, é preciso criar um item com esse conector, autenticando
 com a sua conta do Meu Pluggy. É isso que expõe, para a API, os dados que você
 já autorizou do outro lado.
+
+ANTES DISSO, CONFIRA SE O regras.toml TEM OS itemId.
+
+Listar items é bloqueado pela Pluggy por design — a FAQ diz que não está
+disponível "for security reasons, so that no data can leak across clients".
+Não é permissão a pedir. Os ids precisam estar no regras.toml:
+
+  [[item]]
+  id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  observacao = "Nubank"
+
+Pegue cada id em dashboard.pluggy.ai, na área de items da sua aplicação, e
+valide com: python -m financas diagnostico --modo online --item <UUID>
 
 Confira também:
   - o .env aponta para a aplicação certa, se você tiver mais de uma;
@@ -193,9 +238,8 @@ def comando_frescor(argumentos: argparse.Namespace, config: Configuracao) -> int
         situacoes = verificar_frescor(banco, hoje=hoje)
 
     if not situacoes:
-        print(
-            "nenhuma instituição no banco. Rode 'ingerir' antes de verificar frescor.",
-            file=sys.stderr,
+        _avisar(
+            "nenhuma instituição no banco. Rode 'ingerir' antes de verificar frescor."
         )
         return SAIDA_ERRO
 
@@ -204,11 +248,10 @@ def comando_frescor(argumentos: argparse.Namespace, config: Configuracao) -> int
 
     velhas = atrasadas(situacoes)
     if velhas:
-        print(file=sys.stderr)
-        print(
+        _avisar(
+            "",
             f"{len(velhas)} instituição(ões) sem dado novo. O consentimento de "
             "Open Finance pode ter vencido — reautorize em meu.pluggy.ai.",
-            file=sys.stderr,
         )
         return SAIDA_DADOS_VELHOS
 
@@ -229,9 +272,7 @@ def comando_publicar(argumentos: argparse.Namespace, config: Configuracao) -> in
         print(f"  {tabela:<20} {quantas:>7} linhas")
 
     if resultado.avisos:
-        print(file=sys.stderr)
-        for aviso in resultado.avisos:
-            print(f"AVISO  {aviso}", file=sys.stderr)
+        _avisar("", *(f"AVISO  {aviso}" for aviso in resultado.avisos))
 
     if argumentos.servir:
         print()
@@ -261,8 +302,8 @@ def _sincronizar_categorias(
     nada: a taxonomia é lista de referência, igual para todos os clientes, e
     não contém dado financeiro.
     """
-    cliente = criar_cliente(config)
-    categorias = cliente.listar_categorias()
+    with criar_cliente(config) as cliente:
+        categorias = cliente.listar_categorias()
 
     if not categorias and config.offline:
         print(
@@ -362,14 +403,19 @@ def comando_diagnostico(argumentos: argparse.Namespace, config: Configuracao) ->
         )
         return SAIDA_ERRO
 
+    if argumentos.item:
+        achados = diagnosticar_item(config, argumentos.item)
+        for achado in achados:
+            print(achado)
+        return SAIDA_ERRO if any(a.ok is False for a in achados) else SAIDA_OK
+
     achados = diagnosticar(config)
     for achado in achados:
         print(achado)
 
     houve_falha = any(a.ok is False for a in achados)
     if houve_falha:
-        print(file=sys.stderr)
-        print(INTERPRETACAO_401, file=sys.stderr)
+        _avisar("", INTERPRETACAO_401)
         return SAIDA_ERRO
 
     return SAIDA_OK
@@ -447,8 +493,26 @@ def _declarar_globais(alvo: argparse.ArgumentParser, *, suprimir: bool) -> None:
     )
 
 
+class _Analisador(argparse.ArgumentParser):
+    """ArgumentParser que sai com `SAIDA_ERRO` em erro de uso.
+
+    O argparse sai com 2 quando o comando está errado, e 2 é justamente o
+    código que este projeto reserva para "alguma instituição parou de
+    atualizar". Um script de `cron` que ramifica por código de saída leria um
+    `--desde` digitado errado como consentimento vencido, e iria reautorizar um
+    banco que não tem problema nenhum.
+
+    Erro de uso é erro de configuração do comando, então cai em SAIDA_ERRO.
+    """
+
+    def error(self, message: str) -> "NoReturn":  # type: ignore[override]
+        self.print_usage(sys.stderr)
+        _avisar(f"{self.prog}: error: {message}")
+        raise SystemExit(SAIDA_ERRO)
+
+
 def construir_analisador() -> argparse.ArgumentParser:
-    analisador = argparse.ArgumentParser(
+    analisador = _Analisador(
         prog="financas",
         description="Pipeline de ingestão e análise de gastos via Open Finance.",
         epilog="As flags globais valem antes ou depois do subcomando: "
@@ -464,7 +528,11 @@ def construir_analisador() -> argparse.ArgumentParser:
     globais = argparse.ArgumentParser(add_help=False)
     _declarar_globais(globais, suprimir=True)
 
-    sub = analisador.add_subparsers(dest="comando", required=True)
+    # parser_class propaga o código de saída para os subcomandos: sem isto,
+    # `financas ingerir --desde xx` continuaria saindo com 2.
+    sub = analisador.add_subparsers(
+        dest="comando", required=True, parser_class=_Analisador
+    )
 
     ingerir_ = sub.add_parser(
         "ingerir", help="baixa da API e grava na camada raw", parents=[globais]
@@ -540,6 +608,11 @@ def construir_analisador() -> argparse.ArgumentParser:
         help="testa a conexão com a Pluggy passo a passo (não imprime segredo)",
         parents=[globais],
     )
+    diagnostico_.add_argument(
+        "--item",
+        metavar="UUID",
+        help="valida um itemId específico em /items/{id} e mostra o estado dele",
+    )
     diagnostico_.set_defaults(executar=comando_diagnostico)
 
     status_ = sub.add_parser(
@@ -592,7 +665,32 @@ def _carregar(
     return carregar_configuracao(ambiente=valores, raiz=raiz)
 
 
+def _forcar_utf8() -> None:
+    """Garante saída em UTF-8, inclusive redirecionada.
+
+    No Windows, stdout redirecionado assume a codepage ANSI (cp1252). Toda
+    mensagem deste projeto é em português com acento, então `financas frescor
+    > log.txt` gravava um arquivo que nenhum leitor de UTF-8 abre direito — e
+    um alerta ilegível é um alerta perdido, que é o modo de falha que este
+    projeto combate.
+
+    `errors="replace"` é deliberado: se um nome de estabelecimento vier com
+    byte estranho, é melhor perder um caractere do que derrubar a ingestão
+    inteira com UnicodeEncodeError.
+    """
+    for fluxo in (sys.stdout, sys.stderr):
+        reconfigurar = getattr(fluxo, "reconfigure", None)
+        if reconfigurar is not None:
+            try:
+                reconfigurar(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                # Fluxo já substituído por algo sem suporte (capture de teste,
+                # pipe fechado). Não é motivo para abortar o comando.
+                pass
+
+
 def _configurar_log(verbosidade: int) -> None:
+    _forcar_utf8()
     nivel = {0: logging.WARNING, 1: logging.INFO}.get(verbosidade, logging.DEBUG)
     logging.basicConfig(
         level=nivel, format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr

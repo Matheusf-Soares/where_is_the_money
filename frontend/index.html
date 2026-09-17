@@ -303,21 +303,73 @@ async function iniciar() {
   }
 }
 
+/** Escala de cada coluna DECIMAL do resultado, lida do schema do Arrow.
+ *
+ *  Isto existe por causa de um erro de 100x que passou despercebido: o Arrow
+ *  entrega DECIMAL(18,2) como o inteiro SEM ESCALA — R$ 4.234,75 chega como
+ *  423475 — e `Number(valor)` devolvia esse inteiro direto. A tela mostrava
+ *  R$ 423.475,00 e nada acusava, porque 100x um número plausível continua
+ *  sendo um número plausível.
+ *
+ *  A escala não está no valor, só no schema. Por isso ela é lida aqui e
+ *  aplicada em `consultar` — e não há como uma coluna nova de dinheiro
+ *  escapar: toda DECIMAL é corrigida por construção, sem lista a manter.
+ *
+ *  `scale` é a única propriedade que distingue o tipo Decimal do Arrow dos
+ *  demais tipos numéricos, então é por ela que se detecta.
+ */
+function escalasDecimais(schema) {
+  const escalas = new Map();
+  for (const campo of schema?.fields ?? []) {
+    const escala = campo?.type?.scale;
+    if (typeof escala === 'number' && escala > 0) escalas.set(campo.name, escala);
+  }
+  return escalas;
+}
+
+/** Converte um valor do Arrow para algo que o Intl.NumberFormat entenda.
+ *
+ *  `escala` vem do schema e é aplicada ao inteiro sem escala do DECIMAL. Sem
+ *  ela, o resto do tratamento é o de sempre: BigInt vira Number, objeto que
+ *  não converte vira texto, e o que já é primitivo passa direto.
+ */
+function converter(valor, escala) {
+  if (valor === null || valor === undefined) return valor;
+
+  if (escala) {
+    // Um DECIMAL de 128 bits chega como Uint32Array little-endian quando não
+    // cabe num BigInt. Somar as palavras reconstrói o inteiro sem escala.
+    if (ArrayBuffer.isView(valor) && !(valor instanceof DataView)) {
+      let inteiro = 0;
+      for (let i = valor.length - 1; i >= 0; i--) inteiro = inteiro * 4294967296 + Number(valor[i]);
+      return inteiro / 10 ** escala;
+    }
+    const numero = Number(valor);
+    if (!isNaN(numero)) return numero / 10 ** escala;
+  }
+
+  if (typeof valor === 'bigint') return Number(valor);
+  if (typeof valor === 'object' && !(valor instanceof Date) && 'toString' in valor) {
+    const numero = Number(valor);
+    return isNaN(numero) ? String(valor) : numero;
+  }
+  return valor;
+}
+
 /** Executa SQL e devolve array de objetos simples.
  *
  *  Converte BigInt e Decimal para Number na saída: o Arrow devolve tipos que o
  *  Intl.NumberFormat não entende, e o sintoma seria "NaN" espalhado pela tela
- *  em vez de um erro claro.
+ *  em vez de um erro claro. No caso do Decimal o sintoma era pior que NaN — era
+ *  um número errado e convincente. Ver `escalasDecimais`.
  */
 async function consultar(sql) {
   const resultado = await conexao.query(sql);
+  const escalas = escalasDecimais(resultado.schema);
   return resultado.toArray().map(linha => {
     const objeto = {};
     for (const [chave, valor] of Object.entries(linha.toJSON())) {
-      objeto[chave] = typeof valor === 'bigint' ? Number(valor)
-                    : (valor && typeof valor === 'object' && 'toString' in valor && !(valor instanceof Date))
-                      ? (isNaN(Number(valor)) ? String(valor) : Number(valor))
-                    : valor;
+      objeto[chave] = converter(valor, escalas.get(chave));
     }
     return objeto;
   });
@@ -551,6 +603,7 @@ async function desenharAuditoria() {
            coalesce(id_categoria, '') AS id_categoria,
            categoria, grupo, origem_da_categoria,
            CAST(valor AS DOUBLE) AS valor, tipo, situacao,
+           valor_assinado, e_futura,
            e_pagamento_de_fatura, e_transferencia_propria, e_aplicacao
     FROM stg_transacoes ORDER BY data DESC`);
 
@@ -569,7 +622,10 @@ async function desenharAuditoria() {
   filtrarAuditoria();
 }
 
-const excluida = t => t.e_pagamento_de_fatura || t.e_transferencia_propria || t.e_aplicacao;
+// Parcela futura conta como excluída: ela não chega em `gastos`, e listá-la
+// como gasto faria a aba divergir do total que o resto da tela mostra.
+const excluida = t => t.e_pagamento_de_fatura || t.e_transferencia_propria
+                   || t.e_aplicacao || t.e_futura;
 
 function filtrarAuditoria() {
   const busca = document.getElementById('a-busca').value.toLowerCase().trim();
@@ -579,7 +635,7 @@ function filtrarAuditoria() {
 
   const condicao = {
     '': () => true,
-    gasto: t => t.valor < 0 && !excluida(t),
+    gasto: t => t.valor_assinado < 0 && !excluida(t),
     excluida: t => excluida(t),
     fatura: t => t.e_pagamento_de_fatura,
     transferencia: t => t.e_transferencia_propria,
@@ -619,7 +675,7 @@ function filtrarAuditoria() {
           ? `${escapar(t.categoria_pluggy)}<br><span style="color:var(--texto-fraco);font-size:11px">${escapar(t.id_categoria)}</span>`
           : '<span style="color:var(--texto-fraco)">—</span>' },
     { titulo: 'Valor', num: true, desenhar: t =>
-        `<span class="${t.valor < 0 ? '' : 'ok'}">${brl(t.valor)}</span>` },
+        `<span class="${t.valor_assinado < 0 ? '' : 'ok'}">${brl(t.valor_assinado)}</span>` },
   ]);
 }
 
@@ -631,12 +687,17 @@ function filtrarAuditoria() {
 async function desenharConciliacao() {
   const [c] = await consultar(`
     SELECT
-      CAST(sum(CASE WHEN valor < 0 THEN -valor ELSE 0 END) AS DOUBLE) AS debito_bruto,
-      CAST(sum(CASE WHEN valor < 0 AND e_pagamento_de_fatura THEN -valor ELSE 0 END) AS DOUBLE) AS fatura,
-      CAST(sum(CASE WHEN valor < 0 AND NOT e_pagamento_de_fatura AND e_transferencia_propria THEN -valor ELSE 0 END) AS DOUBLE) AS transferencia,
-      CAST(sum(CASE WHEN valor < 0 AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria AND e_aplicacao THEN -valor ELSE 0 END) AS DOUBLE) AS aplicacao,
-      CAST(sum(CASE WHEN valor < 0 AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria AND NOT e_aplicacao THEN -valor ELSE 0 END) AS DOUBLE) AS gasto
-    FROM stg_transacoes`);
+      CAST(sum(CASE WHEN saida THEN -valor_assinado ELSE 0 END) AS DOUBLE) AS debito_bruto,
+      CAST(sum(CASE WHEN saida AND e_pagamento_de_fatura THEN -valor_assinado ELSE 0 END) AS DOUBLE) AS fatura,
+      CAST(sum(CASE WHEN saida AND NOT e_pagamento_de_fatura AND e_transferencia_propria THEN -valor_assinado ELSE 0 END) AS DOUBLE) AS transferencia,
+      CAST(sum(CASE WHEN saida AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria AND e_aplicacao THEN -valor_assinado ELSE 0 END) AS DOUBLE) AS aplicacao,
+      CAST(sum(CASE WHEN saida AND NOT e_pagamento_de_fatura AND NOT e_transferencia_propria AND NOT e_aplicacao THEN -valor_assinado ELSE 0 END) AS DOUBLE) AS gasto
+    FROM (
+      -- valor_assinado, nunca o valor cru: conta CREDIT inverte a convenção
+      -- da API, e no cartão uma compra chega POSITIVA. E parcela futura fica
+      -- de fora, pelo mesmo motivo que fica fora de gastos.
+      SELECT *, valor_assinado < 0 AND NOT e_futura AS saida FROM stg_transacoes
+    )`);
 
   const soma = c.fatura + c.transferencia + c.aplicacao + c.gasto;
   const diferenca = Math.abs(c.debito_bruto - soma);

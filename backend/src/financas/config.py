@@ -16,6 +16,7 @@ primeira requisição sair, com uma mensagem que diga o que fazer.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -27,6 +28,14 @@ MODO_OFFLINE = "offline"
 MODOS_VALIDOS = (MODO_OFFLINE, MODO_ONLINE)
 
 TIPOS_DE_CONTRAPARTE = ("titular", "chave_pix", "contraparte")
+
+# O itemId da Pluggy é um UUID. Validar o formato aqui é barato e evita a
+# viagem até a API só para descobrir que faltou um caractere na cópia — e
+# `config.py` falha cedo por princípio.
+PADRAO_DE_UUID = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 # As três bandeiras de ruído de `stg_transacoes`, na ordem das armadilhas 1, 2
 # e 3. A categoria da Pluggy pode reforçar qualquer uma delas.
@@ -74,6 +83,37 @@ class PadraoDeDescricao:
     instituicao: str
     padrao: str
     observacao: str = ""
+
+
+@dataclass(frozen=True)
+class ItemConfigurado:
+    """Um `itemId` autorizado, guardado à mão.
+
+    Existe porque `GET /items` é bloqueado pela Pluggy por design — a FAQ diz
+    que listar items "is not available for security reasons, so that no data
+    can leak across clients". Não há o que habilitar: o cliente precisa saber
+    de antemão quais items consultar.
+
+    `instituicao` é o nome curto que vai para TODAS as linhas ingeridas por
+    este item, e não é enfeite: com o conector MeuPluggy (200), que é
+    agregador, `connector.name` devolve "MeuPluggy" para todo item. Sem este
+    campo, as cinco instituições viram uma só — `patrimonio` colapsa numa
+    linha, `frescor` deixa de saber quem parou, e todo padrão escopado por
+    instituição para de casar.
+
+    Ele também resolve o caso do id morto: quando `/items/{id}` devolve 404 não
+    há connector nenhum, e "o item a1b2c3d4… morreu" é pior que "o PicPay
+    morreu".
+    """
+
+    id: str
+    instituicao: str = ""
+    observacao: str = ""
+
+    @property
+    def rotulo(self) -> str:
+        """Como esta conexão aparece em relatório."""
+        return self.instituicao or self.observacao or self.id
 
 
 @dataclass(frozen=True)
@@ -166,6 +206,7 @@ class Regras:
 
     data_inicial: date
     frescor_dias_padrao: int
+    itens: tuple[ItemConfigurado, ...] = ()
     recorrencia_meses_minimos: int = 2
     recorrencia_variacao_maxima: float = 0.15
     categoria_padrao: str = CATEGORIA_PADRAO
@@ -310,6 +351,8 @@ def carregar_regras(caminho: Path) -> Regras:
         geral, "recorrencia_variacao_maxima", 0.15, caminho, problemas
     )
 
+    itens = _itens_configurados(dados, caminho, problemas)
+
     padroes = _padroes_de_descricao(dados, "pagamento_fatura", caminho, problemas)
     aplicacoes = _padroes_de_descricao(dados, "aplicacao", caminho, problemas)
 
@@ -362,6 +405,7 @@ def carregar_regras(caminho: Path) -> Regras:
     return Regras(
         data_inicial=data_inicial,  # type: ignore[arg-type]
         frescor_dias_padrao=frescor_padrao,  # type: ignore[arg-type]
+        itens=tuple(itens),
         recorrencia_meses_minimos=meses_minimos,
         recorrencia_variacao_maxima=variacao_maxima,
         categoria_padrao=categoria_padrao,
@@ -517,6 +561,59 @@ def _lista_de_tabelas(
         else:
             problemas.append(f"{caminho}: cada [[{chave}]] deve ser uma tabela, recebi {item!r}")
     return limpo
+
+
+def _itens_configurados(
+    dados: dict, caminho: Path, problemas: list[str]
+) -> list[ItemConfigurado]:
+    """Lê `[[item]]`: os itemId que a ingestão vai percorrer.
+
+    Recusa id repetido e id que não é UUID. Ausência NÃO é erro aqui: o modo
+    offline não precisa de itemId nenhum, e cobrar isso atrapalharia o
+    desenvolvimento. Quem cobra é a ingestão online, que sabe o que faltou.
+    """
+    itens: list[ItemConfigurado] = []
+    vistos: set[str] = set()
+
+    for indice, bruto in enumerate(_lista_de_tabelas(dados, "item", caminho, problemas)):
+        rotulo_erro = f"{caminho}: [[item]] #{indice + 1}"
+        id_item = _texto(bruto, "id", rotulo_erro, problemas)
+        if not id_item:
+            continue
+
+        if not PADRAO_DE_UUID.match(id_item):
+            problemas.append(
+                f"{rotulo_erro}: id deve ser um UUID "
+                f"(xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx), recebi {id_item!r}. "
+                f"Copie o id do item em dashboard.pluggy.ai."
+            )
+            continue
+
+        if id_item.lower() in vistos:
+            problemas.append(f"{rotulo_erro}: id {id_item!r} aparece mais de uma vez.")
+            continue
+
+        instituicao = str(bruto.get("instituicao", "")).strip()
+        if not instituicao:
+            problemas.append(
+                f"{rotulo_erro}: falta `instituicao`. Com o conector MeuPluggy "
+                f"o campo connector.name devolve 'MeuPluggy' para todos os "
+                f"items, então sem este nome as instituições viram uma só e "
+                f"`patrimonio` e `frescor` param de distinguir quem é quem. "
+                f"Escreva o nome curto, ex.: instituicao = \"Nubank\"."
+            )
+            continue
+
+        vistos.add(id_item.lower())
+        itens.append(
+            ItemConfigurado(
+                id=id_item,
+                instituicao=instituicao,
+                observacao=str(bruto.get("observacao", "")).strip(),
+            )
+        )
+
+    return itens
 
 
 def _padroes_de_descricao(

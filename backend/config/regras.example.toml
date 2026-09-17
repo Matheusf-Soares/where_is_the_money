@@ -41,6 +41,37 @@ grupo_padrao = "Sem grupo"
 
 
 # ---------------------------------------------------------------------------
+# Conexões autorizadas (itemId)
+#
+# OBRIGATÓRIO no modo online. Listar items é bloqueado pela Pluggy por design:
+# a FAQ diz que não está disponível "for security reasons, so that no data can
+# leak across clients". Não é permissão a pedir, não é questão de plano — os
+# ids têm que estar escritos aqui.
+#
+# Onde pegar: dashboard.pluggy.ai > sua aplicação > área de items. Um bloco por
+# instituição.
+#
+# Para conferir um id antes de confiar nele:
+#
+#     python -m financas diagnostico --modo online --item <UUID>
+#
+# ⚠️ REAUTORIZAR UMA INSTITUIÇÃO GERA UM itemId NOVO (armadilha 8). O id antigo
+# passa a responder 404 e aquela instituição sai do relatório. `ingerir` acusa
+# com código 3 e `frescor` com código 2 — mas a correção é manual: trocar o id
+# aqui.
+# ---------------------------------------------------------------------------
+
+# Descomente e preencha um bloco por instituição. Fica comentado porque o id é
+# validado como UUID: um placeholder aqui faria o arquivo de exemplo ser
+# recusado pela própria validação — e um UUID inventado seria pior, porque
+# passaria na validação e só falharia com 404 na primeira ingestão.
+#
+# [[item]]
+# id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# observacao = "qual instituição é esta — aparece no relatório se o id morrer"
+
+
+# ---------------------------------------------------------------------------
 # Armadilha 1: pagamento de fatura de cartão
 #
 # A compra já aparece na conta CREDIT. Quando a fatura é paga, o débito aparece
@@ -122,9 +153,18 @@ observacao = "CONFIRMAR contra as descrições reais da Rico."
 # a contraparte por três vias, porque nem toda transação traz todos os campos.
 #
 # tipo:
-#   titular      -> nome do titular como aparece na descrição/contraparte
-#   chave_pix    -> chave Pix própria (e-mail, telefone, CPF, aleatória)
-#   contraparte  -> documento ou nome de conta própria conhecida
+#   titular      -> nome do titular; procura em payer.name, receiver.name e no texto
+#   contraparte  -> documento; procura em documentNumber.value e no texto
+#   chave_pix    -> chave Pix; procura SÓ no texto da descrição
+#
+# A diferença entre `contraparte` e `chave_pix` importa: a API NÃO devolve chave
+# Pix em campo próprio. `paymentData` identifica a contraparte por `name` e por
+# `documentNumber.value`, e é só isso que existe de estruturado.
+#
+# Consequência prática: se o seu identificador é um CPF, use `contraparte` — ela
+# casa no documento estruturado E no texto, então é superconjunto de `chave_pix`.
+# Reserve `chave_pix` para o que nunca aparece em documentNumber: telefone,
+# e-mail e chave aleatória, que só podem estar escritos na descrição.
 # ---------------------------------------------------------------------------
 
 [[transferencia_propria]]
@@ -132,12 +172,16 @@ tipo = "titular"
 valor = "%<seu nome como aparece no extrato>%"
 
 [[transferencia_propria]]
-tipo = "chave_pix"
-valor = "%<sua chave pix: e-mail, telefone, cpf ou aleatória>%"
+tipo = "contraparte"
+valor = "%<seu cpf sem formatação, como documentNumber.value manda>%"
 
 [[transferencia_propria]]
 tipo = "contraparte"
-valor = "%<cpf ou nome de conta própria conhecida>%"
+valor = "%<o mesmo cpf pontuado, para quando aparece escrito na descrição>%"
+
+[[transferencia_propria]]
+tipo = "chave_pix"
+valor = "%<telefone, e-mail ou chave aleatória — só o texto tem isso>%"
 
 # Um bloco por valor, e um bloco por FORMATO do mesmo valor: cada instituição
 # escreve documento e telefone do seu jeito. Um CPF pode aparecer como
@@ -276,8 +320,10 @@ padrao = "automatic investment"
 # IGUALDADE no categoryId, não por LIKE — e por isso cada id só pode aparecer
 # uma vez aqui.
 #
-# Os ids são hierárquicos: 05070000 é Streaming dentro do grupo 05. Descubra os
-# seus com:
+# Os ids são hierárquicos: 05100000 (Credit card payment) é filha de 05
+# (Transfers). NÃO os adivinhe — a numeração não segue a intuição, e um id
+# errado produz um de-para que não casa nada e falha calado. Descubra os seus
+# com:
 #
 #     SELECT DISTINCT id_categoria, categoria, count(*)
 #     FROM stg_transacoes GROUP BY 1, 2 ORDER BY 3 DESC;

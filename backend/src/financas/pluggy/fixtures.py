@@ -45,6 +45,19 @@ class ClienteFixtures:
     def __init__(self, diretorio: Path) -> None:
         self._diretorio = Path(diretorio)
 
+    # Ciclo de vida sem efeito, porque ler arquivo não abre recurso que precise
+    # ser devolvido. Existe para cumprir o mesmo contrato do cliente HTTP: quem
+    # chama não sabe qual dos dois recebeu, e não deve precisar saber.
+
+    def fechar(self) -> None:
+        """Sem efeito: não há recurso aberto para liberar."""
+
+    def __enter__(self) -> "ClienteFixtures":
+        return self
+
+    def __exit__(self, *_excecao: object) -> None:
+        self.fechar()
+
     def listar_itens(self) -> list[dict[str, Any]]:
         # Sem items.json não há por onde começar: isso é erro de configuração,
         # não ausência legítima de dado.

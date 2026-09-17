@@ -204,7 +204,12 @@ def test_data_malformada_e_recusada_pelo_argparse(
     with pytest.raises(SystemExit) as saida:
         rodar(["ingerir", "--desde", "20/09/2025"], ambiente, projeto)
 
-    assert saida.value.code == 2  # convenção do argparse para uso errado
+    # Erro de uso sai com 1, NÃO com o 2 convencional do argparse: 2 é o código
+    # que este projeto reserva para "alguma instituição parou de atualizar". Um
+    # cron que ramifica por código de saída leria um `--desde` digitado errado
+    # como consentimento vencido.
+    assert saida.value.code == SAIDA_ERRO
+    assert saida.value.code != SAIDA_DADOS_VELHOS
 
 
 # ---------------------------------------------------------------------------
@@ -230,15 +235,68 @@ def test_frescor_sai_dois_quando_ha_dado_velho(
 def test_frescor_sai_zero_quando_tudo_esta_em_dia(
     ambiente: dict[str, str], projeto: Path, capsys
 ) -> None:
-    """Com data de referência logo após o último movimento do PicPay, nada está
-    atrasado."""
-    rodar(["ingerir", "--hoje", "2025-08-07"], ambiente, projeto)
+    """Com tolerância folgada o bastante, nada está atrasado.
+
+    A tolerância é escrita aqui porque não existe data em que as fixtures
+    fiquem todas frescas com o padrão de 5 dias: o PicPay para em 06/08 e a
+    Rico só começa em 08/09, de propósito.
+
+    A versão anterior deste teste usava `--hoje 2025-08-07` e passava por um
+    motivo errado — `frescor` pegava `max(data)` sem recortar o futuro, então
+    transações de setembro contavam como "movimento recente" em agosto e o
+    atraso saía NEGATIVO. Toda instituição parecia fresca, inclusive a que
+    tinha parado. Era o próprio detector da armadilha 4 cego.
+    """
+    regras = projeto / "config" / "regras.toml"
+    regras.write_text(
+        regras.read_text(encoding="utf-8").replace(
+            "frescor_dias_padrao = 5", "frescor_dias_padrao = 60"
+        ),
+        encoding="utf-8",
+    )
+
+    rodar(["ingerir", "--hoje", "2025-09-17"], ambiente, projeto)
     capsys.readouterr()
 
-    codigo = rodar(["frescor", "--hoje", "2025-08-07"], ambiente, projeto)
+    codigo = rodar(["frescor", "--hoje", "2025-09-17"], ambiente, projeto)
 
     assert codigo == SAIDA_OK
     assert "ATRASADA" not in capsys.readouterr().out
+
+
+def test_frescor_nao_e_enganado_por_parcela_futura(
+    ambiente: dict[str, str], projeto: Path, capsys
+) -> None:
+    """Data futura não pode contar como movimento recente.
+
+    A API devolve as parcelas futuras de um parcelamento junto das demais, com
+    data à frente. Sem recorte, `max(data)` vira uma data no futuro, o atraso
+    fica negativo e a instituição parada passa por fresca — que é exatamente a
+    armadilha 4 acontecendo dentro do detector da armadilha 4.
+    """
+    rodar(["ingerir", "--hoje", "2025-09-17"], ambiente, projeto)
+    capsys.readouterr()
+
+    # Uma parcela lá na frente, na conta do PicPay, que está parado desde 06/08.
+    import duckdb
+
+    conexao = duckdb.connect(ambiente["FINANCAS_BANCO"])
+    conexao.execute(
+        """
+        INSERT INTO raw_transacoes (
+            id, id_conta, id_item, instituicao, descricao, valor, moeda, data,
+            tipo, situacao, payload_json, ingerido_em, atualizado_em
+        ) VALUES ('tx-parcela-futura', 'conta-picpay-bank', 'item-picpay', 'PicPay',
+                  'Parcela 8/10', 99.00, 'BRL', DATE '2026-12-31',
+                  'DEBIT', 'PENDING', '{}', now(), now())
+        """
+    )
+    conexao.close()
+
+    codigo = rodar(["frescor", "--hoje", "2025-09-17"], ambiente, projeto)
+
+    assert codigo == SAIDA_DADOS_VELHOS
+    assert "PicPay" in capsys.readouterr().out
 
 
 def test_frescor_com_banco_vazio_nao_finge_que_esta_ok(
@@ -397,4 +455,5 @@ def test_comando_ausente_e_erro_de_uso(projeto: Path) -> None:
     with pytest.raises(SystemExit) as saida:
         main([], ambiente={}, raiz=projeto)
 
-    assert saida.value.code == 2
+    assert saida.value.code == SAIDA_ERRO
+    assert saida.value.code != SAIDA_DADOS_VELHOS

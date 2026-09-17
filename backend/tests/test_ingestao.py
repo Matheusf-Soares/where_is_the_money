@@ -48,9 +48,104 @@ class ClienteComFalha:
         return self._interno.listar_investimentos(id_item)
 
 
+class ClienteComItemDoente:
+    """Envelopa um cliente e adultera o estado de um item.
+
+    Serve para exercitar a leitura de saúde sem inventar uma fixture nova: o
+    que se testa é a reação a `status`, `userAction` e afins, não a travessia.
+    """
+
+    def __init__(self, interno: ClienteFixtures, **campos: Any) -> None:
+        self._interno = interno
+        self._campos = campos
+
+    def listar_itens(self) -> list[dict[str, Any]]:
+        itens = [dict(i) for i in self._interno.listar_itens()]
+        itens[0].update(self._campos)
+        return itens
+
+    def listar_contas(self, id_item: str) -> list[dict[str, Any]]:
+        return self._interno.listar_contas(id_item)
+
+    def listar_transacoes(self, id_conta: str, desde: date) -> Iterator[dict[str, Any]]:
+        return self._interno.listar_transacoes(id_conta, desde)
+
+    def listar_investimentos(self, id_item: str) -> list[dict[str, Any]]:
+        return self._interno.listar_investimentos(id_item)
+
+
 @pytest.fixture
 def cliente(config_offline: Configuracao) -> ClienteFixtures:
     return criar_cliente(config_offline)
+
+
+# ---------------------------------------------------------------------------
+# Saúde do item: a armadilha 4, um passo antes
+# ---------------------------------------------------------------------------
+
+
+def test_item_inexistente_e_falha_nao_excecao(
+    banco: Banco, cliente: ClienteFixtures, config_offline: Configuracao
+) -> None:
+    """Id morto é rotina, e rotina não pode abortar as outras instituições.
+
+    Reautorizar gera um itemId novo (armadilha 8), então `/items/{id}` vai
+    responder 404 mais cedo ou mais tarde. Quando isso acontecer, as outras
+    quatro instituições têm que ser ingeridas normalmente.
+    """
+    doente = ClienteComItemDoente(cliente, status="NOT_FOUND")
+
+    resumo = ingerir(doente, banco, config_offline.regras, hoje=HOJE)
+
+    assert resumo.houve_falha
+    assert len(resumo.falhas) == 1
+    assert "não existe mais" in resumo.falhas[0].motivo
+    # E o resto entrou: 5 items menos o morto.
+    assert resumo.contas > 0
+    assert resumo.transacoes.inseridas > 0
+
+
+def test_item_que_pede_acao_do_usuario_e_reportado(
+    banco: Banco, cliente: ClienteFixtures, config_offline: Configuracao
+) -> None:
+    """A API avisa ANTES de parar de trazer dado, e o aviso não era lido.
+
+    `userAction` preenchido significa MFA pendente ou senha trocada. O dado de
+    hoje vem; o de amanhã não. Sem isto, você descobriria pelo `frescor` uma
+    semana depois.
+    """
+    doente = ClienteComItemDoente(
+        cliente, status="WAITING_USER_INPUT", userAction="INPUT_MFA"
+    )
+
+    resumo = ingerir(doente, banco, config_offline.regras, hoje=HOJE)
+
+    assert not resumo.houve_falha  # o dado veio
+    assert resumo.houve_degradacao
+    assert "INPUT_MFA" in resumo.degradados[0].diagnostico
+    assert "WAITING_USER_INPUT" in resumo.degradados[0].diagnostico
+
+
+def test_login_falhando_em_sequencia_e_reportado(
+    banco: Banco, cliente: ClienteFixtures, config_offline: Configuracao
+) -> None:
+    """Conexão degradando antes de cair."""
+    doente = ClienteComItemDoente(cliente, consecutiveFailedLoginAttempts=3)
+
+    resumo = ingerir(doente, banco, config_offline.regras, hoje=HOJE)
+
+    assert resumo.houve_degradacao
+    assert "3 login" in resumo.degradados[0].diagnostico
+
+
+def test_item_saudavel_nao_gera_ruido(
+    banco: Banco, cliente: ClienteFixtures, config_offline: Configuracao
+) -> None:
+    """Alerta que dispara sempre é alerta que ninguém lê."""
+    resumo = ingerir(cliente, banco, config_offline.regras, hoje=HOJE)
+
+    assert not resumo.houve_falha
+    assert not resumo.houve_degradacao
 
 
 # ---------------------------------------------------------------------------

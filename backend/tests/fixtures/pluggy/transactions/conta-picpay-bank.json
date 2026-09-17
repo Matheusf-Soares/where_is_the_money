@@ -6,24 +6,29 @@
       "accountId": "conta-picpay-bank",
       "description": "Pix recebido - FULANO DE TAL - 123.456.789-09",
       "descriptionRaw": "PIX RECEBIDO",
-      "amount": 500.00,
+      "amount": 500.0,
       "currencyCode": "BRL",
       "date": "2025-08-05T00:00:00.000Z",
       "type": "CREDIT",
       "status": "POSTED",
-      "balance": 805.40,
+      "balance": 805.4,
       "category": "Transfers",
-      "categoryId": "06000000",
+      "categoryId": "05000000",
       "paymentData": {
         "paymentMethod": "PIX",
         "payer": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"}
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         },
         "receiver": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"},
-          "pixKey": "123.456.789-09"
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         }
       }
     },
@@ -32,14 +37,14 @@
       "accountId": "conta-picpay-bank",
       "description": "iFood",
       "descriptionRaw": "IFOOD *PEDIDO",
-      "amount": -62.30,
+      "amount": -62.3,
       "currencyCode": "BRL",
       "date": "2025-08-06T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
-      "balance": 743.10,
+      "balance": 743.1,
       "category": "Food delivery",
-      "categoryId": "05030000",
+      "categoryId": "11020000",
       "merchant": {
         "name": "iFood",
         "businessName": "IFOOD COM AGENCIA DE RESTAURANTES ONLINE SA",

@@ -68,7 +68,65 @@ def test_auth_ok_e_items_401_e_reportado_como_chave_recusada(config, monkeypatch
 
     assert "POST /auth" in saida and "HTTP 200" in saida
     assert "apiKey recebida" in saida
-    assert "recusada por todos os cabeçalhos" in saida
+    assert "GET /items foi recusado" in saida
+
+
+def test_401_em_items_com_referencia_ok_nao_culpa_a_credencial(
+    config, monkeypatch
+) -> None:
+    """A chave vale, só /items está bloqueado — e o relatório precisa mostrar.
+
+    Este é o caso real, e a versão anterior do diagnóstico o lia errado:
+    concluía "a apiKey é recusada" e mandava rotacionar credencial, trocar de
+    ambiente e conferir plano. Nenhum dos três era o problema.
+    """
+
+    def atender(requisicao: httpx.Request) -> httpx.Response:
+        caminho = requisicao.url.path
+        if caminho == "/auth":
+            return httpx.Response(200, json={"apiKey": "chave-valida"})
+        if caminho == "/connectors":
+            return httpx.Response(200, json={"total": 1, "results": [{"id": 200}]})
+        if caminho == "/categories":
+            return httpx.Response(200, json={"total": 130, "results": []})
+        if caminho == "/v2/items":
+            return httpx.Response(
+                403,
+                json={
+                    "message": "This client is not enabled to list its items.",
+                    "code": 403,
+                    "codeDescription": "LIST_ITEMS_FEATURE_NOT_ENABLED",
+                },
+            )
+        return httpx.Response(401, json={"message": "Unauthorized", "code": 401})
+
+    saida = texto(rodar(config, atender, monkeypatch))
+
+    # A chave funciona, e o relatório prova isso antes de julgar o 401.
+    assert "GET /connectors" in saida
+    assert "GET /categories" in saida
+    # E o motivo real aparece com todas as letras, vindo da v2.
+    assert "LIST_ITEMS_FEATURE_NOT_ENABLED" in saida
+    assert "NÃO tem permissão para listar items" in saida
+
+
+def test_categorizacao_indisponivel_e_sinalizada(config, monkeypatch) -> None:
+    """Taxonomia vazia = feature premium desligada = de-para inerte."""
+
+    def atender(requisicao: httpx.Request) -> httpx.Response:
+        caminho = requisicao.url.path
+        if caminho == "/auth":
+            return httpx.Response(200, json={"apiKey": "chave-valida"})
+        if caminho == "/categories":
+            return httpx.Response(200, json={"total": 0, "results": []})
+        if caminho == "/connectors":
+            return httpx.Response(200, json={"total": 1, "results": []})
+        return httpx.Response(401, json={"message": "Unauthorized"})
+
+    saida = texto(rodar(config, atender, monkeypatch))
+
+    assert "categorização" in saida
+    assert "inerte" in saida
 
 
 def test_descobre_quando_outro_cabecalho_e_o_aceito(config, monkeypatch) -> None:

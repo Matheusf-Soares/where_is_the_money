@@ -5,38 +5,43 @@
       "accountId": "conta-santander-bank",
       "description": "PAGTO CARTAO SANTANDER",
       "descriptionRaw": "PAGTO CARTAO SANTANDER 9876",
-      "amount": -890.30,
+      "amount": -890.3,
       "currencyCode": "BRL",
       "date": "2025-09-12T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
       "balance": 2310.05,
       "category": "Credit card payment",
-      "categoryId": "07000000"
+      "categoryId": "05100000"
     },
     {
       "id": "tx-sa-b-02",
       "accountId": "conta-santander-bank",
       "description": "PIX ENVIADO 31900001111",
       "descriptionRaw": "PIX ENVIADO",
-      "amount": -300.00,
+      "amount": -300.0,
       "currencyCode": "BRL",
       "date": "2025-09-07T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
       "balance": 3200.35,
       "category": "Transfers",
-      "categoryId": "06000000",
+      "categoryId": "05000000",
       "paymentData": {
         "paymentMethod": "PIX",
         "payer": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"}
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         },
         "receiver": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"},
-          "pixKey": "31900001111"
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         }
       }
     },
@@ -45,23 +50,29 @@
       "accountId": "conta-santander-bank",
       "description": "TED ENVIADA - FULANO DE TAL - RICO INVESTIMENTOS DTVM",
       "descriptionRaw": "TED ENVIADA RICO INVESTIMENTOS DTVM",
-      "amount": -2000.00,
+      "amount": -2000.0,
       "currencyCode": "BRL",
       "date": "2025-09-15T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
       "balance": 1310.05,
       "category": "Transfers",
-      "categoryId": "06000000",
+      "categoryId": "05000000",
       "paymentData": {
         "paymentMethod": "TED",
         "payer": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"}
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         },
         "receiver": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"},
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          },
           "accountNumber": "31122334-4",
           "routingNumber": "0001"
         }
@@ -72,14 +83,14 @@
       "accountId": "conta-santander-bank",
       "description": "Posto Ipiranga",
       "descriptionRaw": "POSTO IPIRANGA 1234",
-      "amount": -180.00,
+      "amount": -180.0,
       "currencyCode": "BRL",
       "date": "2025-09-09T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
       "balance": 3500.35,
-      "category": "Gas station",
-      "categoryId": "04030000",
+      "category": "Gas stations",
+      "categoryId": "19050001",
       "merchant": {
         "name": "Posto Ipiranga",
         "businessName": "IPIRANGA PRODUTOS DE PETROLEO SA",

@@ -28,7 +28,7 @@ categorização e não permitem séries históricas customizadas.
 
 | Fase | O quê | Situação |
 |---|---|---|
-| **1** | Ingestão, persistência, views SQL, testes, CLI | ✅ completa — 224 testes passando |
+| **1** | Ingestão, persistência, views SQL, testes, CLI | ✅ completa — 325 testes passando |
 | **2** | Categorização própria sobre a categoria da Pluggy | em andamento — resolução em 3 camadas pronta |
 | **3** | Frontend consumindo as views | ✅ estático + DuckDB-WASM, 6 abas |
 | **4** | *(talvez)* migração para GCP com execução agendada | — |
@@ -61,7 +61,7 @@ where_is_the_money/
 │  ├─ sql/            # staging/ e marts/
 │  ├─ tests/
 │  └─ config/
-└─ frontend/          # fase 3, ainda vazia
+└─ frontend/          # fase 3, concluída: index.html + dados/ publicados
 ```
 
 **Todo comando de backend roda de dentro de `backend/`.** O `pyproject.toml`
@@ -116,14 +116,29 @@ mais 3 cartões de crédito, um deles vinculado à Rico.
 ### Endpoints relevantes
 
 ```
-POST /auth                                  -> apiKey (validade ~2h)
-GET  /items                                 -> conexões autorizadas
-GET  /accounts?itemId=                      -> contas de um item
-GET  /transactions?accountId=&from=&page=   -> extrato, paginado
-GET  /investments?itemId=                   -> posição de investimentos
+POST /auth                                     -> apiKey (validade ~2h)
+GET  /items                                    -> conexões autorizadas
+GET  /accounts?itemId=                         -> contas de um item
+GET  /v2/transactions?accountId=&dateFrom=&after=  -> extrato, por cursor
+GET  /investments?itemId=                      -> posição de investimentos
+GET  /categories                               -> taxonomia (referência)
 ```
 
 Host: `https://api.pluggy.ai`
+
+
+**O extrato mudou de endereço.** `GET /transactions` responde **HTTP 410
+ENDPOINT_DEPRECATED** e manda usar `GET /v2/transactions`. As duas diferenças
+que importam:
+
+- **Pagina por cursor, não por página.** O corpo é
+  `{"results": [...], "next": <cursor|null>}`, e o cursor volta como `after`.
+  `page` e `pageSize` são recusados.
+- **O recorte de data mudou de nome:** `from` virou `dateFrom`. A v2 valida por
+  whitelist e responde 400 `property from should not exist`.
+
+Os demais endpoints continuam na v1, paginando por `page`/`totalPages` — por
+isso o cliente tem as duas formas de paginar.
 
 O vocabulário `item → account → transaction` se repete no código inteiro, e a
 ingestão percorre exatamente essa hierarquia.
@@ -236,9 +251,9 @@ introduza um `if modo ==` em nenhum outro módulo.
 
 ---
 
-## 7. As nove armadilhas do domínio
+## 7. As armadilhas do domínio
 
-Já custaram tempo. São requisitos, não sugestões.
+Já custaram tempo. São requisitos, não sugestões. As de 10 a 13 só apareceram na primeira ingestão real, em 17/09/2026 — as nove primeiras foram previstas, estas foram descobertas com dado de verdade na mão.
 
 | # | Armadilha | Onde é tratada |
 |---|---|---|
@@ -251,6 +266,10 @@ Já custaram tempo. São requisitos, não sugestões.
 | 7 | **Paginação obrigatória** | o cliente itera até acabar; há teste |
 | 8 | **`itemId` muda** a cada reautorização | é atributo, nunca identidade |
 | 9 | **Histórico começa ~2025-08** | `data_inicial` no `regras.toml` |
+| 10 | **Conta CREDIT inverte o sinal** — no cartão, compra (`type=DEBIT`) vem com `amount` POSITIVO; na conta corrente vem negativo | `valor_assinado` em `stg_transacoes`, derivado de `tipo` |
+| 11 | **Parcela futura vem junto** — a API devolve as parcelas que ainda não venceram, com data à frente e `status=PENDING` | `e_futura` → fora de `gastos` e do `frescor` |
+| 12 | **O conector MeuPluggy é agregador** — `connector.name` devolve "MeuPluggy" para todos os items, então instituição não dá para inferir | `instituicao` obrigatório em `[[item]]` |
+| 13 | **Listar items é bloqueado por design** — `GET /items` responde 401 para todo cliente da Pluggy | `[[item]]` no `regras.toml` + `GET /items/{id}` |
 
 **A Pluggy classifica nativamente as armadilhas 1, 2 e 3** — as categorias
 `Credit card payment`, `Same person transfer` e `Investments`. `cfg_categorias_ruido`
@@ -280,7 +299,7 @@ pip install -e ".[dev]"                             # OBRIGATÓRIO, veja abaixo
 cp env.example .env                                 # preencha as credenciais
 cp config/regras.example.toml config/regras.toml    # preencha suas chaves Pix
 
-python -m pytest                                    # 276 testes, sem rede
+python -m pytest                                    # 325 testes, sem rede
 ```
 
 ⚠️ **O `pip install -e .` não é opcional.** Sem ele, `python -m financas`
@@ -310,6 +329,7 @@ Para ver o dashboard: `python -m financas publicar --servir` e abrir
 DuckDB-WASM usa Web Workers e range requests, e os dois exigem origem HTTP.
 
 Flags globais: `--modo online|offline`, `--banco CAMINHO`, `-v` (ou `-vv`).
+`diagnostico` aceita `--item UUID`, que valida um `itemId` sem ingerir nada.
 `ingerir` aceita `--desde` e `--hoje`; `frescor`, `--hoje`; `categorias`,
 `--sincronizar` e `--saida`.
 
@@ -331,6 +351,7 @@ Pensados para `cron` e script, onde ninguém lê a saída na hora:
 | `3` | ingestão parcial: pelo menos uma instituição falhou |
 | `4` | regra de categoria que nunca casou: filtro que não filtra |
 | `5` | **a API respondeu mas não havia nada para ingerir** |
+| `6` | uma conexão pediu ação sua (MFA, senha trocada, reautorizar) |
 
 ### Configuração: duas fontes
 
@@ -397,7 +418,7 @@ permissões são limitadas por padrão.
   o que fez antes de seguir.
 - **Se uma decisão de modelagem tiver mais de um caminho razoável**, apresente
   as opções com o trade-off em vez de escolher sozinho.
-- **Rode `python -m pytest` antes de dizer que terminou.** 224 testes, ~15s,
+- **Rode `python -m pytest` antes de dizer que terminou.** 325 testes, ~35s,
   sem rede.
 - Antes de escrever código, leia [`backend/README.md`](backend/README.md): ele
   explica o *porquê* de cada decisão listada na seção 6.

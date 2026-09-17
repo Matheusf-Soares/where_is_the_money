@@ -5,23 +5,29 @@
       "accountId": "conta-rico-bank",
       "description": "TED recebida FULANO DE TAL",
       "descriptionRaw": "TED RECEBIDA",
-      "amount": 2000.00,
+      "amount": 2000.0,
       "currencyCode": "BRL",
       "date": "2025-09-15T00:00:00.000Z",
       "type": "CREDIT",
       "status": "POSTED",
-      "balance": 2105.00,
+      "balance": 2105.0,
       "category": "Transfers",
-      "categoryId": "06000000",
+      "categoryId": "05000000",
       "paymentData": {
         "paymentMethod": "TED",
         "payer": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"}
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         },
         "receiver": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"}
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         }
       }
     },
@@ -30,14 +36,14 @@
       "accountId": "conta-rico-bank",
       "description": "Aplicacao CDB Rico",
       "descriptionRaw": "APLICACAO CDB",
-      "amount": -2000.00,
+      "amount": -2000.0,
       "currencyCode": "BRL",
       "date": "2025-09-16T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
-      "balance": 105.00,
+      "balance": 105.0,
       "category": "Investments",
-      "categoryId": "08000000"
+      "categoryId": "03000000"
     }
   ],
   "page": 1,

@@ -13,9 +13,16 @@
 --      outro não é gasto.
 --   3. Aplicação e resgate. O dinheiro mudou de lugar, não sumiu.
 --
--- Sinal: `valor` aqui é POSITIVO. Na camada raw um gasto de R$ 100 é -100,
--- porque é assim que a API manda. Somar despesa negativa é fonte constante de
--- erro de sinal em relatório, então a inversão acontece uma vez, aqui.
+-- Sinal: `valor` aqui é POSITIVO, e vem de `valor_assinado` do staging — não
+-- do `valor` cru.
+--
+-- A distinção não é cosmética. Conta CREDIT inverte a convenção da API: no
+-- cartão, uma compra vem com amount POSITIVO, e na conta corrente vem
+-- negativo. Filtrar o valor cru por `< 0` descartava todas as compras de
+-- cartão. `valor_assinado` resolve isso no staging, a partir do campo `tipo`.
+--
+-- Também fora: parcela futura de parcelamento (`e_futura`). Ela vem da API
+-- junto das demais, com data à frente, e somá-la infla mês que não chegou.
 
 CREATE OR REPLACE VIEW gastos AS
 SELECT
@@ -37,7 +44,7 @@ SELECT
     t.categoria_pluggy,
     t.origem_da_categoria,
     coalesce(t.estabelecimento, t.descricao) AS estabelecimento,
-    -t.valor                                AS valor,
+    -t.valor_assinado                       AS valor,
     t.moeda,
     t.cartao_final,
     t.parcela_numero,
@@ -47,7 +54,8 @@ FROM stg_transacoes t
 LEFT JOIN stg_contas c
        ON c.id_conta = t.id_conta
       AND c.e_retrato_atual
-WHERE t.valor < 0
+WHERE t.valor_assinado < 0
+  AND NOT t.e_futura
   AND NOT t.e_pagamento_de_fatura
   AND NOT t.e_transferencia_propria
   AND NOT t.e_aplicacao;

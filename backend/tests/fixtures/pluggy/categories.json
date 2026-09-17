@@ -1,17 +1,84 @@
-[
-  { "id": "01000000", "description": "Income", "descriptionTranslated": "Receita" },
-  { "id": "04000000", "description": "Transportation", "descriptionTranslated": "Transporte" },
-  { "id": "04030000", "description": "Gas station", "descriptionTranslated": "Posto de combustível", "parentId": "04000000", "parentDescription": "Transportation" },
-  { "id": "05000000", "description": "Shopping and services", "descriptionTranslated": "Compras e serviços" },
-  { "id": "05010000", "description": "Supermarket", "descriptionTranslated": "Supermercado", "parentId": "05000000", "parentDescription": "Shopping and services" },
-  { "id": "05020000", "description": "Food and drinks", "descriptionTranslated": "Alimentação", "parentId": "05000000", "parentDescription": "Shopping and services" },
-  { "id": "05030000", "description": "Food delivery", "descriptionTranslated": "Delivery", "parentId": "05000000", "parentDescription": "Shopping and services" },
-  { "id": "05050000", "description": "Healthcare", "descriptionTranslated": "Saúde", "parentId": "05000000", "parentDescription": "Shopping and services" },
-  { "id": "05060000", "description": "Gym", "descriptionTranslated": "Academia", "parentId": "05000000", "parentDescription": "Shopping and services" },
-  { "id": "05070000", "description": "Streaming", "descriptionTranslated": "Streaming", "parentId": "05000000", "parentDescription": "Shopping and services" },
-  { "id": "05090000", "description": "Shopping", "descriptionTranslated": "Compras", "parentId": "05000000", "parentDescription": "Shopping and services" },
-  { "id": "06000000", "description": "Transfers", "descriptionTranslated": "Transferências" },
-  { "id": "06010000", "description": "Same person transfer", "descriptionTranslated": "Transferência entre contas próprias", "parentId": "06000000", "parentDescription": "Transfers" },
-  { "id": "07000000", "description": "Credit card payment", "descriptionTranslated": "Pagamento de fatura", "parentId": "06000000", "parentDescription": "Transfers" },
-  { "id": "08000000", "description": "Investments", "descriptionTranslated": "Investimentos" }
-]
+{
+  "results": [
+    {
+      "id": "01000000",
+      "description": "Income",
+      "descriptionTranslated": "Renda"
+    },
+    {
+      "id": "03000000",
+      "description": "Investments",
+      "descriptionTranslated": "Investimentos"
+    },
+    {
+      "id": "04000000",
+      "description": "Same person transfer",
+      "descriptionTranslated": "Transferência mesma titularidade"
+    },
+    {
+      "id": "05000000",
+      "description": "Transfers",
+      "descriptionTranslated": "Transferências"
+    },
+    {
+      "id": "05100000",
+      "description": "Credit card payment",
+      "descriptionTranslated": "Pagamento de cartão de crédito",
+      "parentId": "05000000",
+      "parentDescription": "Transfers"
+    },
+    {
+      "id": "07030001",
+      "description": "Gyms and fitness centers",
+      "descriptionTranslated": "Academia e centros de lazer",
+      "parentId": "07030000",
+      "parentDescription": "Wellness and fitness"
+    },
+    {
+      "id": "08000000",
+      "description": "Shopping",
+      "descriptionTranslated": "Compras"
+    },
+    {
+      "id": "09020000",
+      "description": "Video streaming",
+      "descriptionTranslated": "Streaming de vídeo",
+      "parentId": "09000000",
+      "parentDescription": "Digital services"
+    },
+    {
+      "id": "10000000",
+      "description": "Groceries",
+      "descriptionTranslated": "Supermercado"
+    },
+    {
+      "id": "11000000",
+      "description": "Food and drinks",
+      "descriptionTranslated": "Alimentos e bebidas"
+    },
+    {
+      "id": "11020000",
+      "description": "Food delivery",
+      "descriptionTranslated": "Delivery de alimentos",
+      "parentId": "11000000",
+      "parentDescription": "Food and drinks"
+    },
+    {
+      "id": "18000000",
+      "description": "Healthcare",
+      "descriptionTranslated": "Saúde"
+    },
+    {
+      "id": "19000000",
+      "description": "Transportation",
+      "descriptionTranslated": "Transporte"
+    },
+    {
+      "id": "19050001",
+      "description": "Gas stations",
+      "descriptionTranslated": "Postos de gasolina",
+      "parentId": "19050000",
+      "parentDescription": "Automotive"
+    }
+  ]
+}

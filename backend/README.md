@@ -87,14 +87,29 @@ contexto separado (*Investments*) e são tratados como tal.
 ### Endpoints usados
 
 ```
-POST /auth                                  -> apiKey (validade ~2h)
-GET  /items                                 -> conexões autorizadas
-GET  /accounts?itemId=                      -> contas de um item
-GET  /transactions?accountId=&from=&page=   -> extrato, paginado
-GET  /investments?itemId=                   -> posição de investimentos
+POST /auth                                     -> apiKey (validade ~2h)
+GET  /items                                    -> conexões autorizadas
+GET  /accounts?itemId=                         -> contas de um item
+GET  /v2/transactions?accountId=&dateFrom=&after=  -> extrato, por cursor
+GET  /investments?itemId=                      -> posição de investimentos
+GET  /categories                               -> taxonomia (referência)
 ```
 
 Host: `https://api.pluggy.ai`.
+
+
+**O extrato mudou de endereço.** `GET /transactions` responde **HTTP 410
+ENDPOINT_DEPRECATED** e manda usar `GET /v2/transactions`. As duas diferenças
+que importam:
+
+- **Pagina por cursor, não por página.** O corpo é
+  `{"results": [...], "next": <cursor|null>}`, e o cursor volta como `after`.
+  `page` e `pageSize` são recusados.
+- **O recorte de data mudou de nome:** `from` virou `dateFrom`. A v2 valida por
+  whitelist e responde 400 `property from should not exist`.
+
+Os demais endpoints continuam na v1, paginando por `page`/`totalPages` — por
+isso o cliente tem as duas formas de paginar.
 
 ---
 
@@ -186,6 +201,15 @@ saíram do lugar**.
 A ingestão é cara (rede, latência, consentimento que expira). A transformação é
 barata (SQL local, roda em segundos). Separar as duas significa que errar na
 parte barata custa barato.
+
+
+**A API não devolve chave Pix.** `paymentData` identifica a contraparte por
+`name` e por `documentNumber.value`, e é só isso. Um `pixKey` chegou a existir
+no código, lido de `paymentData.receiver.pixKey` — campo que só as fixtures
+tinham. Contra a API real a coluna vinha sempre nula, e os testes de
+transferência própria passavam sem exercitar nada. Por isso `contraparte` (que
+casa no documento estruturado) é preferível a `chave_pix` (que só olha texto)
+sempre que o identificador for um CPF.
 
 ### Stack
 
@@ -401,7 +425,7 @@ apareceria no dia em que o Santander mudasse a redação.
 ## 8. Estrutura de diretórios
 
 O repositório está dividido em duas fases: `backend/` (fase 1, completa) e
-`frontend/` (fase 3, ainda vazia). **Todo comando abaixo roda de dentro de
+`frontend/` (fase 3, concluída). **Todo comando abaixo roda de dentro de
 `backend/`** — `pythonpath`, `testpaths` e `raiz_do_projeto()` são relativos a
 ele. O pacote se chama `financas`, e é assim que se importa, sempre:
 `from financas.config import ...`.
@@ -409,7 +433,7 @@ ele. O pacote se chama `financas`, e é assim que se importa, sempre:
 ```
 where_is_the_money/
 ├─ CLAUDE.md                     # escopo, restrições e decisões (raiz do repo)
-├─ frontend/                     # fase 3, vazia
+├─ frontend/                     # fase 3: dashboard estático + DuckDB-WASM
 └─ backend/
    ├─ README.md                  # este arquivo
    ├─ pyproject.toml             # deps e configuração do pytest
@@ -476,8 +500,15 @@ python -m pytest
 python -m financas ingerir     # baixa e grava na camada raw
 python -m financas views       # recarrega cfg_* e aplica os .sql
 python -m financas frescor     # alguém parou de trazer dado novo?
+python -m financas categorias  # regra morta e cobertura da categorização
+python -m financas diagnostico # testa a conexão com a Pluggy passo a passo
+python -m financas publicar    # exporta as views em Parquet para o frontend
 python -m financas status      # o que existe no banco
 ```
+
+Para ver o dashboard: `python -m financas publicar --servir` e abrir
+`http://127.0.0.1:8000`. **Não abra o `index.html` por `file://`** — o
+DuckDB-WASM usa Web Workers e range requests, e os dois exigem origem HTTP.
 
 Flags globais: `--modo online|offline`, `--banco CAMINHO`, `-v` (ou `-vv`).
 `ingerir` aceita `--desde` e `--hoje`; `frescor`, `--hoje`.
@@ -492,9 +523,18 @@ Pensados para `cron` e script, onde ninguém lê a saída na hora:
 | `1` | configuração inválida, uso errado, falha inesperada |
 | `2` | **alguma instituição parou de atualizar** (armadilha 4) |
 | `3` | ingestão parcial: pelo menos uma instituição falhou |
+| `6` | uma conexão pediu ação sua (MFA, senha, reautorizar) |
+| `4` | regra de categoria que nunca casou: filtro que não filtra |
+| `5` | **a API respondeu mas não havia nada para ingerir** |
 
 Os códigos 2 e 3 são o ponto da armadilha 4: o pipeline que "funciona" mas
 parou de trazer dado precisa gritar, não passar batido.
+
+Erro de uso — comando inexistente, data malformada — sai com `1`, e **não** com
+o `2` que o argparse usa por convenção. O `2` aqui significa "alguma
+instituição parou de atualizar", e um `cron` que ramifica por código de saída
+leria um `--desde` digitado errado como consentimento vencido, indo reautorizar
+um banco que não tem problema nenhum.
 
 ---
 
@@ -511,7 +551,7 @@ O backend está sendo construído em incrementos revisáveis, nesta ordem:
 | e | **Views SQL** — `gastos`, `recorrencias`, `patrimonio` | ✅ concluída |
 | f | **Testes de ponta a ponta** — armadilhas 1, 2, 3 e 7 | ✅ concluída |
 
-**224 testes passando**, nenhum tocando rede ou credencial.
+**325 testes passando**, nenhum tocando rede ou credencial.
 
 A fase 1 está completa. O backend ingere, persiste, transforma e responde —
 falta rodar contra a API real, o que é feito fora deste ambiente.
@@ -525,8 +565,8 @@ falta rodar contra a API real, o que é feito fora deste ambiente.
 - [`views.py`](src/financas/views.py) · [`cli.py`](src/financas/cli.py) — orquestração
 - [`sql/staging/`](sql/staging/) · [`sql/marts/`](sql/marts/) — as 6 views
 
-Tudo que a seção 8 descreve existe no disco. A `frontend/` na raiz está vazia
-de propósito: é a fase 3.
+Tudo que a seção 8 descreve existe no disco. A `frontend/` na raiz guarda o
+dashboard estático da fase 3, alimentado por `python -m financas publicar`.
 
 ### O tamanho do problema, em números
 
@@ -544,12 +584,26 @@ inventado.
 
 ### Lacunas conhecidas
 
+- ~~**Um item por instituição é uma suposição.**~~
+  **CONFERIDO em 17/09/2026:** são quatro items, um por instituição — mas
+  todos com `connector.name = "MeuPluggy"`, porque o conector 200 é agregador.
+  A suposição sobre a QUANTIDADE estava certa; a sobre o NOME, não. Por isso
+  `instituicao` virou campo obrigatório em `[[item]]`.
+
+  O texto original segue abaixo, para registro:
+
 - **Um item por instituição é uma suposição.** O conector MeuPluggy pode
   devolver um único item agregando tudo. As fixtures assumem cinco itens; se a
   API real fizer diferente, mudam as fixtures, não o código — a ingestão percorre
   `items → accounts` de qualquer jeito.
 - **Transferência via TED entre contas próprias** só é pega pelo nome do
   titular. Se o extrato de alguma instituição não trouxer o nome, escapa.
+- ~~**`patrimonio` assume que `balance` de conta `CREDIT` é positivo**~~
+  **RESOLVIDO em 17/09/2026:** conferido contra a API real — o `balance` do
+  cartão vem `+854,87`, positivo, como a view assume. A suposição estava certa.
+
+  O texto original segue abaixo, para registro:
+
 - **`patrimonio` assume que `balance` de conta `CREDIT` é positivo** e representa
   o valor devido. Se alguma instituição devolver negativo, o sinal inverte e o
   patrimônio fica inflado. Conferir na primeira ingestão real.

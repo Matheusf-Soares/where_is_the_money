@@ -330,7 +330,15 @@ def test_dinheiro_sobrevive_como_decimal(
     assert isinstance(total, Decimal)
     # 7 lançamentos da conta corrente mais 5 do cartão, conferidos à mão
     # contra as fixtures.
-    assert total == Decimal("5759.75")
+    #
+    # Este é o valor CRU, com o sinal que a API manda — e por isso as contas
+    # BANK e CREDIT entram com convenções opostas. É proposital: "raw é
+    # sagrado", e quem quiser somar despesa usa `valor_assinado` do staging.
+    #
+    #   conta corrente (BANK, convenção normal):   +4778.45
+    #   cartão         (CREDIT, convenção oposta):  -981.30
+    #                                              ---------
+    assert total == Decimal("3797.15")
 
 
 def test_payload_original_fica_recuperavel(banco: Banco) -> None:

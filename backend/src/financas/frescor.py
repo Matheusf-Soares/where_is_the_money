@@ -42,8 +42,13 @@ conectadas AS (
     WHERE data_posicao = (SELECT data_posicao FROM ultimo_retrato)
 ),
 movimento AS (
+    -- `data <= hoje` não é detalhe: a API devolve as parcelas futuras de um
+    -- parcelamento junto das demais, com data à frente. Sem o recorte, a
+    -- última transação do Nubank era 2026-12-10 e o atraso saía NEGATIVO —
+    -- toda instituição parecia fresca, inclusive a que tinha parado.
     SELECT instituicao, max(data) AS ultima
     FROM raw_transacoes
+    WHERE data <= CAST($hoje AS DATE)
     GROUP BY instituicao
 ),
 padrao AS (

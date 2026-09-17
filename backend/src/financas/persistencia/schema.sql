@@ -48,12 +48,15 @@ CREATE TABLE IF NOT EXISTS raw_transacoes (
     saldo                 DECIMAL(18,2),
     -- Campos de contraparte: é com eles que a armadilha 2 identifica
     -- transferência entre contas do próprio titular.
+    --
+    -- Não há coluna de chave Pix porque a API não devolve uma: `paymentData`
+    -- identifica a contraparte por nome e por documento, e é só isso que
+    -- existe. Chave Pix, quando aparece, vem dentro do texto da descrição.
     metodo_pagamento      VARCHAR,
     pagador_nome          VARCHAR,
     pagador_documento     VARCHAR,
     recebedor_nome        VARCHAR,
     recebedor_documento   VARCHAR,
-    recebedor_chave_pix   VARCHAR,
     estabelecimento_nome  VARCHAR,
     estabelecimento_cnpj  VARCHAR,
     cartao_final          VARCHAR,

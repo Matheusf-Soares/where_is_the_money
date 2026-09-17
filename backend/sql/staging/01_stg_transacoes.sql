@@ -27,7 +27,22 @@ WITH base AS (
         -- A Pluggy às vezes só preenche descriptionRaw. Cair para ele evita
         -- perder a única pista textual que a transação tem.
         coalesce(descricao, descricao_original, '')  AS descricao,
+        -- O valor como a API mandou, preservado para auditoria.
         valor,
+        -- O valor com sinal NORMALIZADO: saída sempre negativa.
+        --
+        -- Isto existe porque conta CREDIT inverte a convenção. No cartão, uma
+        -- compra (`type=DEBIT`) vem com amount POSITIVO; na conta corrente vem
+        -- negativo. Filtrar por `valor < 0` descartava todas as compras de
+        -- cartão — silenciosamente, que é o pior jeito de errar um total.
+        --
+        -- `tipo` é o invariante: DEBIT é saída e CREDIT é entrada nas duas
+        -- convenções. Quando `tipo` não vem, resta confiar no sinal cru.
+        CASE
+            WHEN upper(coalesce(tipo, '')) = 'DEBIT'  THEN -abs(valor)
+            WHEN upper(coalesce(tipo, '')) = 'CREDIT' THEN  abs(valor)
+            ELSE valor
+        END                                          AS valor_assinado,
         moeda,
         tipo,
         situacao,
@@ -42,9 +57,13 @@ WITH base AS (
         parcela_total,
         metodo_pagamento,
         recebedor_nome,
-        recebedor_chave_pix,
 
         lower(coalesce(descricao, descricao_original, ''))  AS descricao_busca,
+        -- `description` é o texto JÁ PROCESSADO pela Pluggy; `descriptionRaw`
+        -- é o original do banco. Padrão escrito olhando o extrato casa com o
+        -- segundo, então os dois são consultados — procurar só no processado
+        -- perderia exatamente os padrões que você copiou do seu extrato.
+        lower(coalesce(descricao_original, ''))             AS original_busca,
         lower(coalesce(estabelecimento_nome, ''))           AS estabelecimento_busca,
         -- Vazio quando a Pluggy não classificou (feature premium desligada, ou
         -- transação que o modelo não reconheceu). Vazio não casa padrão nenhum,
@@ -52,9 +71,16 @@ WITH base AS (
         -- texto continua sendo tudo que existe.
         lower(coalesce(categoria, ''))                      AS categoria_busca,
         lower(coalesce(instituicao, ''))                    AS instituicao_busca,
+        -- Direção do dinheiro, derivada do valor já normalizado. Decide qual
+        -- lado da transação é a CONTRAPARTE: numa saída é o recebedor, numa
+        -- entrada é o pagador.
+        CASE
+            WHEN upper(coalesce(tipo, '')) = 'DEBIT'  THEN TRUE
+            WHEN upper(coalesce(tipo, '')) = 'CREDIT' THEN FALSE
+            ELSE valor < 0
+        END                                                 AS e_saida,
         lower(coalesce(pagador_nome, ''))                   AS pagador_busca,
         lower(coalesce(recebedor_nome, ''))                 AS recebedor_busca,
-        lower(coalesce(recebedor_chave_pix, ''))            AS chave_busca,
         lower(coalesce(pagador_documento, ''))              AS documento_pagador_busca,
         lower(coalesce(recebedor_documento, ''))            AS documento_recebedor_busca
     FROM raw_transacoes
@@ -81,6 +107,7 @@ regra_casada AS (
       ON b.instituicao_busca LIKE r.instituicao
      AND (
             b.descricao_busca       LIKE r.padrao
+         OR b.original_busca        LIKE r.padrao
          OR b.estabelecimento_busca LIKE r.padrao
      )
 ),
@@ -106,9 +133,17 @@ SELECT
     EXTRACT(MONTH FROM b.data)  AS mes,
     b.descricao,
     b.valor,
+    b.valor_assinado,
     b.moeda,
     b.tipo,
     b.situacao,
+    -- Parcela que ainda não aconteceu. A Pluggy devolve as futuras de um
+    -- parcelamento junto das demais, com `status = PENDING` e data à frente.
+    -- Elas não são gasto: somá-las infla meses que ainda não chegaram.
+    --
+    -- Fica como bandeira, e não como WHERE, pelo mesmo motivo das outras três:
+    -- "por que essa parcela não está no total?" se responde com um SELECT.
+    b.data > current_date                            AS e_futura,
     -- Nomenclatura, válida no projeto inteiro: `categoria` é SEMPRE a sua, e
     -- `categoria_pluggy` é SEMPRE a que a API devolveu. A da Pluggy continua
     -- ao lado para auditar o de-para — dá para ver o que a fonte dizia e o que
@@ -148,7 +183,7 @@ SELECT
         EXISTS (
             SELECT 1 FROM cfg_padroes_fatura f
             WHERE b.instituicao_busca LIKE f.instituicao
-              AND b.descricao_busca   LIKE f.padrao
+              AND (b.descricao_busca LIKE f.padrao OR b.original_busca LIKE f.padrao)
         )
         OR EXISTS (
             SELECT 1 FROM cfg_categorias_ruido c
@@ -170,23 +205,33 @@ SELECT
     EXISTS (
         SELECT 1 FROM cfg_contrapartes_proprias c
         WHERE (
+            -- A contraparte depende da direção. Casar o nome do titular
+            -- contra o PAGADOR de um débito identifica você mesmo — e você é
+            -- o pagador de todo gasto que faz. Essa inversão já marcou 147
+            -- transações e R$ 102.191,93 como transferência própria.
             c.tipo = 'titular' AND (
-                b.pagador_busca   LIKE c.valor OR
-                b.recebedor_busca LIKE c.valor OR
-                b.descricao_busca LIKE c.valor
+                (b.e_saida     AND b.recebedor_busca LIKE c.valor) OR
+                (NOT b.e_saida AND b.pagador_busca   LIKE c.valor) OR
+                b.descricao_busca LIKE c.valor OR
+                b.original_busca  LIKE c.valor
             )
         ) OR (
-            -- A chave costuma vir no campo próprio, mas várias instituições só
-            -- a escrevem no meio da descrição.
+            -- A API não devolve a chave Pix em campo próprio — `paymentData` só
+            -- traz nome e documento. Quando a chave aparece, é dentro do texto,
+            -- então é no texto que se procura. Para casar por CPF prefira
+            -- `tipo = "contraparte"`, que bate no documento estruturado.
             c.tipo = 'chave_pix' AND (
-                b.chave_busca     LIKE c.valor OR
-                b.descricao_busca LIKE c.valor
+                b.descricao_busca LIKE c.valor OR
+                b.original_busca  LIKE c.valor
             )
         ) OR (
+            -- Mesma correção de direção, pelo mesmo motivo: o seu CPF é o
+            -- documento do pagador em todo débito que você faz.
             c.tipo = 'contraparte' AND (
-                b.documento_pagador_busca   LIKE c.valor OR
-                b.documento_recebedor_busca LIKE c.valor OR
-                b.descricao_busca           LIKE c.valor
+                (b.e_saida     AND b.documento_recebedor_busca LIKE c.valor) OR
+                (NOT b.e_saida AND b.documento_pagador_busca   LIKE c.valor) OR
+                b.descricao_busca LIKE c.valor OR
+                b.original_busca  LIKE c.valor
             )
         )
     )
@@ -202,7 +247,7 @@ SELECT
         EXISTS (
             SELECT 1 FROM cfg_padroes_aplicacao a
             WHERE b.instituicao_busca LIKE a.instituicao
-              AND b.descricao_busca   LIKE a.padrao
+              AND (b.descricao_busca LIKE a.padrao OR b.original_busca LIKE a.padrao)
         )
         OR EXISTS (
             SELECT 1 FROM cfg_categorias_ruido c

@@ -95,12 +95,25 @@ class ApiPluggyFalsa:
             return self._paginar(self._ler(arquivo), consulta)
 
         if caminho == "/transactions":
+            # A Pluggy aposentou a v1 do extrato. Responder 410 aqui é o que
+            # impede o cliente de voltar para ela sem ninguém perceber.
+            return httpx.Response(
+                410,
+                json={
+                    "message": "This endpoint is deprecated. Use GET "
+                    "/v2/transactions with cursor pagination instead.",
+                    "code": 410,
+                    "codeDescription": "ENDPOINT_DEPRECATED",
+                },
+            )
+
+        if caminho == "/v2/transactions":
             registros = self._ler(f"transactions/{consulta['accountId']}.json")
-            desde = consulta.get("from")
+            desde = consulta.get("dateFrom")
             if desde:
                 # O recorte por data é do servidor, exatamente como na API real.
                 registros = [t for t in registros if t["date"][:10] >= desde]
-            return self._paginar(registros, consulta)
+            return self._paginar_por_cursor(registros, consulta)
 
         return httpx.Response(404, json={"message": f"rota desconhecida: {caminho}"})
 
@@ -110,6 +123,29 @@ class ApiPluggyFalsa:
             return []
         conteudo = json.loads(caminho.read_text(encoding="utf-8"))
         return conteudo["results"] if isinstance(conteudo, dict) else conteudo
+
+    def _paginar_por_cursor(
+        self, registros: list[dict[str, Any]], consulta
+    ) -> httpx.Response:
+        """Pagina como a v2 de verdade.
+
+        `next` é a QUERY STRING INTEIRA da próxima página, com `?` na frente —
+        não um valor de cursor solto. É assim que a Pluggy responde, e a
+        diferença não é cosmética: mandar o `next` dentro de `after=` devolve
+        400 INVALID_CURSOR. O formato falso anterior escondia esse bug.
+        """
+        inicio = int(consulta.get("after", 0))
+        fatia = registros[inicio : inicio + self._tamanho]
+        fim = inicio + len(fatia)
+
+        proximo = None
+        if fim < len(registros):
+            proximo = (
+                f"?accountId={consulta['accountId']}"
+                f"&dateFrom={consulta.get('dateFrom', '')}"
+                f"&after={fim}"
+            )
+        return httpx.Response(200, json={"results": fatia, "next": proximo})
 
     def _paginar(self, registros: list[dict[str, Any]], consulta) -> httpx.Response:
         pagina = int(consulta.get("page", 1))
@@ -164,7 +200,7 @@ def test_o_pipeline_atravessa_varias_paginas(pipeline: Banco, api: ApiPluggyFals
     Se o cliente parasse na primeira página, o banco teria uma fração do dado —
     e ninguém perceberia, porque nada falharia.
     """
-    assert api.paginas_de("/transactions") > 8
+    assert api.paginas_de("/v2/transactions") > 8
     assert api.paginas_de("/items") == 3  # 5 itens em páginas de 2
     assert pipeline.contar("raw_transacoes") == 27
 
@@ -296,7 +332,8 @@ def test_pagamento_de_fatura_sai_dos_gastos_no_fluxo_completo(pipeline: Banco) -
 def test_dupla_contagem_evitada_em_reais(pipeline: Banco) -> None:
     (dobrado,) = uma(
         pipeline,
-        "SELECT -sum(valor) FROM stg_transacoes WHERE e_pagamento_de_fatura AND valor < 0",
+        "SELECT -sum(valor_assinado) FROM stg_transacoes "
+        "WHERE e_pagamento_de_fatura AND valor_assinado < 0",
     )
 
     assert dobrado == Decimal("2500.30")
@@ -369,11 +406,19 @@ def test_todo_debito_ou_e_gasto_ou_foi_excluido_por_um_motivo(pipeline: Banco) -
     """Conservação: a soma dos débitos da camada limpa tem que fechar com
     gastos + excluídos. Sobrar significa dado perdido; faltar, dado contado
     duas vezes."""
-    (total,) = uma(pipeline, "SELECT -sum(valor) FROM stg_transacoes WHERE valor < 0")
+    # Tudo em `valor_assinado`: é ele que significa "saída de dinheiro" nas
+    # duas convenções de sinal da API. Com o valor cru, a conservação fecharia
+    # por acaso na conta corrente e quebraria no cartão.
+    (total,) = uma(
+        pipeline,
+        "SELECT -sum(valor_assinado) FROM stg_transacoes "
+        "WHERE valor_assinado < 0 AND NOT e_futura",
+    )
     (em_gastos,) = uma(pipeline, "SELECT sum(valor) FROM gastos")
     (excluidos,) = uma(
         pipeline,
-        "SELECT -sum(valor) FROM stg_transacoes WHERE valor < 0 AND "
+        "SELECT -sum(valor_assinado) FROM stg_transacoes "
+        "WHERE valor_assinado < 0 AND NOT e_futura AND "
         "(e_pagamento_de_fatura OR e_transferencia_propria OR e_aplicacao)",
     )
 

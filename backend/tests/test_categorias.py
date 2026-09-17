@@ -15,8 +15,8 @@ camada a resposta foi decidida.
 
 Casos-chave nas fixtures:
 
-    tx-nu-b-05  Netflix.com     05070000  regra E mapa -> a regra tem que vencer
-    tx-nu-c-02  Spotify         05070000  só mapa
+    tx-nu-b-05  Netflix.com     09020000  (Video streaming)  regra E mapa -> a regra tem que vencer
+    tx-nu-c-02  Spotify         09020000  só mapa
     tx-nu-c-01  Uber *Trip      04000000  só regra
     tx-in-b-03  Academia        05060000  só mapa
     tx-sa-c-01  Restaurante Xis 05020000  nenhum  -> rótulo padrão
@@ -76,7 +76,7 @@ def regras_com(extra: str, tmp_path):
 def test_regra_por_texto_vence_o_de_para(banco_com_views: Banco) -> None:
     """O caso que justifica a camada 1 existir.
 
-    Netflix casa a regra `%netflix%` e também o de-para de 05070000. Se o
+    Netflix casa a regra `%netflix%` e também o de-para de 09020000. Se o
     de-para vencesse, a categorização fina não teria como sobrescrever a
     grosseira — que é o motivo inteiro da fase 2.
     """
@@ -124,7 +124,7 @@ grupo = "Essencial"
         tmp_path,
     )
     banco.gravar_regras(regras)
-    _inserir(banco, "tx-1", "Supermercado Big Centro", "05010000")
+    _inserir(banco, "tx-1", "Supermercado Big Centro", "10000000")
     aplicar_views(banco, SQL)
 
     assert categoria_de(banco, "tx-1") == ("Específica", "Essencial", "regra")
@@ -218,7 +218,7 @@ def test_categoria_da_pluggy_continua_disponivel(banco_com_views: Banco) -> None
         "WHERE id_transacao = 'tx-nu-b-05'",
     )
 
-    assert (categoria_pluggy, id_categoria) == ("Streaming", "05070000")
+    assert (categoria_pluggy, id_categoria) == ("Video streaming", "09020000")
 
 
 # ---------------------------------------------------------------------------
@@ -269,19 +269,19 @@ def test_id_categoria_repetido_no_de_para_e_recusado(tmp_path) -> None:
         regras_com(
             """
 [[mapa_categoria]]
-id_categoria = "05070000"
+id_categoria = "09020000"
 categoria = "Streaming"
 grupo = "Lazer"
 
 [[mapa_categoria]]
-id_categoria = "05070000"
+id_categoria = "09020000"
 categoria = "Assinaturas"
 grupo = "Fixo"
 """,
             tmp_path,
         )
 
-    assert "05070000" in str(erro.value)
+    assert "09020000" in str(erro.value)
 
 
 def test_padrao_com_maiuscula_e_recusado(tmp_path) -> None:
@@ -470,7 +470,10 @@ def test_taxonomia_vazia_avisa_sobre_a_feature_premium() -> None:
 def test_cliente_offline_le_a_taxonomia() -> None:
     categorias = ClienteFixtures(FIXTURES_PLUGGY).listar_categorias()
 
-    assert {c["id"] for c in categorias} >= {"05070000", "07000000"}
+    # Ids REAIS de GET /categories: Video streaming e Credit card payment.
+    # Os anteriores (05070000, 07000000) eram inventados e significam outra
+    # coisa na taxonomia de verdade.
+    assert {c["id"] for c in categorias} >= {"09020000", "05100000"}
 
 
 def test_cliente_offline_tolera_taxonomia_ausente(tmp_path) -> None:
@@ -526,7 +529,7 @@ grupo = "Lazer"
         tmp_path,
     )
     banco.gravar_regras(regras)
-    _inserir(banco, "tx-9", "Supermercado Big", "05010000")
+    _inserir(banco, "tx-9", "Supermercado Big", "10000000")
     aplicar_views(banco, SQL)
 
     resultado = auditar(banco)
@@ -585,7 +588,7 @@ padrao = "credit card payment"
         tmp_path,
     )
     banco.gravar_regras(regras)
-    _inserir(banco, "tx-f", "QUITACAO MENSAL PLASTICO", "07000000", categoria="Credit card payment")
+    _inserir(banco, "tx-f", "QUITACAO MENSAL PLASTICO", "05100000", categoria="Credit card payment")
     aplicar_views(banco, SQL)
 
     (marcado,) = uma(
@@ -613,7 +616,7 @@ padrao = "same person transfer%"
         banco,
         "tx-t",
         "TRANSF ENTRE CONTAS 998877",
-        "06010000",
+        "04000000",
         categoria="Same person transfer - PIX",
     )
     aplicar_views(banco, SQL)
@@ -682,6 +685,73 @@ padrao = "qualquer coisa"
 # ---------------------------------------------------------------------------
 # Auxiliar
 # ---------------------------------------------------------------------------
+
+
+def test_categoria_pega_transferencia_que_o_texto_nao_pegaria(
+    banco_com_views: Banco,
+) -> None:
+    """A segunda rede da armadilha 2, sozinha.
+
+    Descrição opaca: nenhum padrão de contraparte casa, porque não há nome,
+    documento nem chave no texto. O que marca é a categoria nativa da Pluggy.
+
+    Este é o caso que justifica `cfg_categorias_ruido` existir. A lista de
+    contrapartes depende de você ter escrito seu nome e cada chave, em cada
+    formato; `Same person transfer` não depende de nada disso.
+    """
+    banco_com_views.conexao.execute(
+        "INSERT INTO cfg_categorias_ruido VALUES "
+        "('transferencia_propria', 'same person transfer%', '')"
+    )
+    _inserir(
+        banco_com_views,
+        "tx-opaca",
+        "TRANSFERENCIA 000123456",
+        "04020000",
+        categoria="Same person transfer - PIX",
+    )
+
+    (marcada,) = banco_com_views.conexao.execute(
+        "SELECT e_transferencia_propria FROM stg_transacoes "
+        "WHERE id_transacao = 'tx-opaca'"
+    ).fetchone()
+
+    assert marcada is True
+
+    # E, marcada, não pode chegar em `gastos`.
+    (quantas,) = banco_com_views.conexao.execute(
+        "SELECT count(*) FROM gastos WHERE id_transacao = 'tx-opaca'"
+    ).fetchone()
+    assert quantas == 0
+
+
+def test_categoria_ruido_reforca_o_texto_em_vez_de_substituir(
+    banco_com_views: Banco,
+) -> None:
+    """Sem categoria da Pluggy, o texto continua sendo tudo que existe.
+
+    Se a feature de categorização estiver desligada na conta, `category` vem
+    nulo em toda transação. A bandeira tem que continuar subindo pelo texto —
+    senão trocar uma rede pela outra teria só mudado o tipo de falso negativo.
+    """
+    banco_com_views.conexao.execute(
+        "INSERT INTO cfg_categorias_ruido VALUES "
+        "('fatura', 'credit card payment', '')"
+    )
+    _inserir(
+        banco_com_views,
+        "tx-sem-categoria",
+        "PAGAMENTO DE FATURA CARTAO",
+        "",
+        categoria=None,
+    )
+
+    (marcada,) = banco_com_views.conexao.execute(
+        "SELECT e_pagamento_de_fatura FROM stg_transacoes "
+        "WHERE id_transacao = 'tx-sem-categoria'"
+    ).fetchone()
+
+    assert marcada is True
 
 
 def _inserir(

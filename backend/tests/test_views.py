@@ -112,13 +112,161 @@ def test_a_compra_no_cartao_continua_contando(banco_com_views: Banco) -> None:
 
 def test_sem_o_filtro_o_gasto_dobraria(banco_com_views: Banco) -> None:
     """O tamanho do erro que a armadilha 1 causaria, em números."""
+    # `valor_assinado`, não `valor`: conta CREDIT inverte a convenção da API,
+    # e no cartão uma compra vem POSITIVA. Somar o valor cru aqui misturaria
+    # compra de cartão com pagamento de fatura de conta corrente.
     (dupla_contagem,) = uma(
         banco_com_views,
-        "SELECT -sum(valor) FROM stg_transacoes "
-        "WHERE e_pagamento_de_fatura AND valor < 0",
+        "SELECT -sum(valor_assinado) FROM stg_transacoes "
+        "WHERE e_pagamento_de_fatura AND valor_assinado < 0",
     )
 
     assert dupla_contagem == Decimal("2500.30")
+
+
+# ---------------------------------------------------------------------------
+# Convenção de sinal: conta CREDIT inverte
+# ---------------------------------------------------------------------------
+
+
+def test_compra_de_cartao_entra_em_gastos_apesar_do_sinal_invertido(
+    banco_com_views: Banco,
+) -> None:
+    """O bug mais caro que este projeto já teve, e o teste que faltava.
+
+    Conta CREDIT inverte a convenção da API: uma compra (`type=DEBIT`) chega
+    com amount POSITIVO, ao contrário da conta corrente. Enquanto `gastos`
+    filtrava `valor < 0`, TODA compra de cartão saía do total em silêncio —
+    contra os dados reais, R$ 37.614,77 que não apareciam em lugar nenhum.
+
+    `tx-nu-c-01` (Uber, R$ 24,90) chega positiva da fixture de cartão. Se ela
+    estiver em `gastos` com valor positivo, a normalização está de pé.
+    """
+    (valor_cru,) = uma(
+        banco_com_views,
+        "SELECT valor FROM raw_transacoes WHERE id = 'tx-nu-c-01'",
+    )
+    # Pré-condição: a fixture tem que estar na convenção de cartão, senão o
+    # teste não prova nada.
+    assert valor_cru > 0, "fixture de cartão voltou para a convenção de conta corrente"
+
+    (valor_em_gastos,) = uma(
+        banco_com_views,
+        "SELECT valor FROM gastos WHERE id_transacao = 'tx-nu-c-01'",
+    )
+
+    assert valor_em_gastos == Decimal("24.90")
+
+
+def test_valor_assinado_normaliza_as_duas_convencoes(banco_com_views: Banco) -> None:
+    """Saída é sempre negativa em `valor_assinado`, venha de onde vier.
+
+    `tx-nu-b-01` é débito de conta corrente (chega negativo) e `tx-nu-c-01` é
+    débito de cartão (chega positivo). Os dois são saída de dinheiro, e depois
+    da normalização os dois são negativos.
+    """
+    linhas = banco_com_views.conexao.execute(
+        "SELECT id_transacao, tipo, valor, valor_assinado FROM stg_transacoes "
+        "WHERE id_transacao IN ('tx-nu-b-01', 'tx-nu-c-01') ORDER BY id_transacao"
+    ).fetchall()
+
+    por_id = {linha[0]: linha for linha in linhas}
+
+    # Conta corrente: já vinha negativo.
+    assert por_id["tx-nu-b-01"][1] == "DEBIT"
+    assert por_id["tx-nu-b-01"][2] < 0
+    assert por_id["tx-nu-b-01"][3] < 0
+
+    # Cartão: vinha positivo e foi normalizado.
+    assert por_id["tx-nu-c-01"][1] == "DEBIT"
+    assert por_id["tx-nu-c-01"][2] > 0
+    assert por_id["tx-nu-c-01"][3] < 0
+
+
+def test_credito_no_cartao_nao_vira_gasto(banco_com_views: Banco) -> None:
+    """`tx-nu-c-04` é o pagamento da fatura visto do lado do cartão.
+
+    Na convenção de cartão ele chega NEGATIVO, que é justamente o sinal que a
+    versão antiga de `gastos` aceitava. Entrada de dinheiro não é despesa, em
+    nenhuma das duas convenções.
+    """
+    (valor_cru,) = uma(
+        banco_com_views, "SELECT valor FROM raw_transacoes WHERE id = 'tx-nu-c-04'"
+    )
+    assert valor_cru < 0  # negativo na convenção de cartão
+
+    (quantas,) = uma(
+        banco_com_views, "SELECT count(*) FROM gastos WHERE id_transacao = 'tx-nu-c-04'"
+    )
+    assert quantas == 0
+
+
+# ---------------------------------------------------------------------------
+# Parcela futura de parcelamento
+# ---------------------------------------------------------------------------
+
+
+def test_parcela_futura_nao_conta_como_gasto(banco_com_views: Banco) -> None:
+    """A API devolve as parcelas que ainda não venceram, com data à frente.
+
+    Contra os dados reais são 7 delas, todas `PENDING` e todas com metadado de
+    parcelamento. Somá-las infla meses que ainda não aconteceram — e o
+    relatório do mês que vem já nasceria errado.
+    """
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO raw_transacoes (
+            id, id_conta, id_item, instituicao, descricao, valor,
+            moeda, data, tipo, situacao, parcela_numero, parcela_total,
+            payload_json, ingerido_em, atualizado_em
+        ) VALUES ('tx-futura', 'conta-nubank-credit', 'item-nubank', 'Nubank',
+                  'Loja Parcela 5/10', 300.00, 'BRL',
+                  CAST(current_date + INTERVAL 60 DAY AS DATE),
+                  'DEBIT', 'PENDING', 5, 10, '{}', now(), now())
+        """
+    )
+
+    (marcada,) = uma(
+        banco_com_views,
+        "SELECT e_futura FROM stg_transacoes WHERE id_transacao = 'tx-futura'",
+    )
+    assert marcada is True
+
+    (quantas,) = uma(
+        banco_com_views, "SELECT count(*) FROM gastos WHERE id_transacao = 'tx-futura'"
+    )
+    assert quantas == 0
+
+
+def test_parcela_do_mes_corrente_continua_contando(banco_com_views: Banco) -> None:
+    """O filtro é por DATA, não por status.
+
+    Uma compra de cartão do mês corrente vem `PENDING` porque a fatura está
+    aberta — mas ela aconteceu. Excluir todo `PENDING` esconderia o gasto do
+    mês, que é o oposto do que se quer.
+    """
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO raw_transacoes (
+            id, id_conta, id_item, instituicao, descricao, valor,
+            moeda, data, tipo, situacao, payload_json, ingerido_em, atualizado_em
+        ) VALUES ('tx-pendente-hoje', 'conta-nubank-credit', 'item-nubank', 'Nubank',
+                  'Padaria da esquina', 42.00, 'BRL', current_date,
+                  'DEBIT', 'PENDING', '{}', now(), now())
+        """
+    )
+
+    (marcada,) = uma(
+        banco_com_views,
+        "SELECT e_futura FROM stg_transacoes WHERE id_transacao = 'tx-pendente-hoje'",
+    )
+    assert marcada is False
+
+    (valor,) = uma(
+        banco_com_views,
+        "SELECT valor FROM gastos WHERE id_transacao = 'tx-pendente-hoje'",
+    )
+    assert valor == Decimal("42.00")
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +324,127 @@ def test_compra_comum_nao_e_confundida_com_transferencia(
     )
 
     assert not marcados & {"tx-nu-b-04", "tx-sa-b-04", "tx-pp-b-02"}
+
+
+def test_titular_como_pagador_nao_faz_a_compra_virar_transferencia(
+    banco_com_views: Banco,
+) -> None:
+    """O bug mais caro depois do sinal, e o mais fácil de não notar.
+
+    Em toda saída da sua conta, o PAGADOR é você. Se a regra `titular` casar o
+    seu nome contra `pagador_nome`, todo gasto vira "transferência própria" e
+    some do total — foram 147 transações e R$ 102.191,93 contra os dados
+    reais, com o relatório parecendo perfeitamente normal.
+
+    O que define transferência própria é a CONTRAPARTE: numa saída, o
+    recebedor. Aqui o titular paga e quem recebe é um mercado.
+    """
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO cfg_contrapartes_proprias VALUES
+            ('titular', '%fulano%de%tal%', 'o titular das fixtures')
+        """
+    )
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO raw_transacoes (
+            id, id_conta, id_item, instituicao, descricao, valor, moeda, data,
+            tipo, situacao, pagador_nome, recebedor_nome,
+            payload_json, ingerido_em, atualizado_em
+        ) VALUES ('tx-compra-comum', 'conta-nubank-bank', 'item-nubank', 'Nubank',
+                  'Compra no mercado', -87.40, 'BRL', DATE '2025-09-10',
+                  'DEBIT', 'POSTED',
+                  'FULANO DE TAL',            -- o pagador é o titular
+                  'MERCADO BOM PRECO LTDA',   -- a contraparte NÃO é
+                  '{}', now(), now())
+        """
+    )
+
+    (marcada,) = uma(
+        banco_com_views,
+        "SELECT e_transferencia_propria FROM stg_transacoes "
+        "WHERE id_transacao = 'tx-compra-comum'",
+    )
+    assert marcada is False, (
+        "compra comum marcada como transferência própria: a regra do titular "
+        "está olhando o pagador numa saída"
+    )
+
+    (valor,) = uma(
+        banco_com_views,
+        "SELECT valor FROM gastos WHERE id_transacao = 'tx-compra-comum'",
+    )
+    assert valor == Decimal("87.40")
+
+
+def test_titular_como_recebedor_e_transferencia_propria(
+    banco_com_views: Banco,
+) -> None:
+    """O outro lado: aí sim é transferência para você mesmo."""
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO cfg_contrapartes_proprias VALUES
+            ('titular', '%fulano%de%tal%', 'o titular das fixtures')
+        """
+    )
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO raw_transacoes (
+            id, id_conta, id_item, instituicao, descricao, valor, moeda, data,
+            tipo, situacao, pagador_nome, recebedor_nome,
+            payload_json, ingerido_em, atualizado_em
+        ) VALUES ('tx-para-mim', 'conta-nubank-bank', 'item-nubank', 'Nubank',
+                  'TED', -900.00, 'BRL', DATE '2025-09-11',
+                  'DEBIT', 'POSTED',
+                  'FULANO DE TAL',   -- pagador
+                  'FULANO DE TAL',   -- e recebedor: a contraparte é o titular
+                  '{}', now(), now())
+        """
+    )
+
+    (marcada,) = uma(
+        banco_com_views,
+        "SELECT e_transferencia_propria FROM stg_transacoes "
+        "WHERE id_transacao = 'tx-para-mim'",
+    )
+    assert marcada is True
+
+    (quantas,) = uma(
+        banco_com_views,
+        "SELECT count(*) FROM gastos WHERE id_transacao = 'tx-para-mim'",
+    )
+    assert quantas == 0
+
+
+def test_documento_do_pagador_nao_marca_saida(banco_com_views: Banco) -> None:
+    """Mesma inversão, pelo CPF: o seu CPF é o do pagador em todo débito."""
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO cfg_contrapartes_proprias VALUES
+            ('contraparte', '%12345678909%', 'CPF do titular')
+        """
+    )
+    banco_com_views.conexao.execute(
+        """
+        INSERT INTO raw_transacoes (
+            id, id_conta, id_item, instituicao, descricao, valor, moeda, data,
+            tipo, situacao, pagador_documento, recebedor_documento,
+            payload_json, ingerido_em, atualizado_em
+        ) VALUES ('tx-cpf-pagador', 'conta-nubank-bank', 'item-nubank', 'Nubank',
+                  'Compra online', -240.00, 'BRL', DATE '2025-09-12',
+                  'DEBIT', 'POSTED',
+                  '12345678909',        -- o pagador é o titular
+                  '11222333000144',     -- o recebedor é um CNPJ qualquer
+                  '{}', now(), now())
+        """
+    )
+
+    (marcada,) = uma(
+        banco_com_views,
+        "SELECT e_transferencia_propria FROM stg_transacoes "
+        "WHERE id_transacao = 'tx-cpf-pagador'",
+    )
+    assert marcada is False
 
 
 # ---------------------------------------------------------------------------

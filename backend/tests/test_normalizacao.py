@@ -85,7 +85,9 @@ def test_contraparte_aninhada_e_extraida() -> None:
     assert linha["metodo_pagamento"] == "PIX"
     assert linha["pagador_documento"] == "12345678909"
     assert linha["recebedor_nome"] == "FULANO DE TAL"
-    assert linha["recebedor_chave_pix"] == "123.456.789-09"
+    # Não há asserção de chave Pix: `paymentData` não tem campo `pixKey`.
+    # O que identifica a contraparte é o documento, e é ele que se verifica.
+    assert linha["recebedor_documento"] == "12345678909"
 
 
 def test_dados_de_cartao_sao_extraidos() -> None:
@@ -108,7 +110,7 @@ def test_dados_de_cartao_sao_extraidos() -> None:
 def test_caminho_aninhado_ausente_vira_nulo_sem_estourar() -> None:
     linha = normalizar({"id": "tx-1"})
 
-    assert linha["recebedor_chave_pix"] is None
+    assert linha["recebedor_documento"] is None
     assert linha["pagador_nome"] is None
     assert linha["estabelecimento_cnpj"] is None
 

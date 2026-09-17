@@ -165,6 +165,7 @@ def auditar(banco: Banco) -> Auditoria:
           -- As mesmas exclusões do total. Sem elas, a lista mandaria você
           -- escrever de-para para pagamento de fatura e transferência própria,
           -- que nunca chegam em `gastos`: trabalho que não muda nada.
+          AND NOT t.e_futura
           AND NOT t.e_pagamento_de_fatura
           AND NOT t.e_transferencia_propria
           AND NOT t.e_aplicacao
@@ -178,10 +179,12 @@ def auditar(banco: Banco) -> Auditoria:
         SELECT
             count(*),
             count(*) FILTER (WHERE origem_da_categoria = 'padrao'),
-            coalesce(sum(CASE WHEN origem_da_categoria = 'padrao' AND valor < 0
-                              THEN -valor ELSE 0 END), 0)
+            coalesce(sum(CASE WHEN origem_da_categoria = 'padrao'
+                                AND valor_assinado < 0
+                              THEN -valor_assinado ELSE 0 END), 0)
         FROM stg_transacoes
-        WHERE NOT e_pagamento_de_fatura
+        WHERE NOT e_futura
+          AND NOT e_pagamento_de_fatura
           AND NOT e_transferencia_propria
           AND NOT e_aplicacao
         """

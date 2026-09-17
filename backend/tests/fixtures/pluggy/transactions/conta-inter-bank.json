@@ -5,24 +5,29 @@
       "accountId": "conta-inter-bank",
       "description": "Pix recebido 31900001111",
       "descriptionRaw": "PIX RECEBIDO",
-      "amount": 300.00,
+      "amount": 300.0,
       "currencyCode": "BRL",
       "date": "2025-09-07T00:00:00.000Z",
       "type": "CREDIT",
       "status": "POSTED",
       "balance": 2090.12,
       "category": "Transfers",
-      "categoryId": "06000000",
+      "categoryId": "05000000",
       "paymentData": {
         "paymentMethod": "PIX",
         "payer": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"}
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         },
         "receiver": {
           "name": "FULANO DE TAL",
-          "documentNumber": {"type": "CPF", "value": "12345678909"},
-          "pixKey": "31900001111"
+          "documentNumber": {
+            "type": "CPF",
+            "value": "12345678909"
+          }
         }
       }
     },
@@ -31,28 +36,28 @@
       "accountId": "conta-inter-bank",
       "description": "Pagamento Fatura Cartao Inter",
       "descriptionRaw": "PAGAMENTO FATURA CARTAO",
-      "amount": -410.00,
+      "amount": -410.0,
       "currencyCode": "BRL",
       "date": "2025-09-14T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
       "balance": 1580.22,
       "category": "Credit card payment",
-      "categoryId": "07000000"
+      "categoryId": "05100000"
     },
     {
       "id": "tx-in-b-03",
       "accountId": "conta-inter-bank",
       "description": "Academia Smart Fit",
       "descriptionRaw": "SMART FIT ESCOLA DE GINASTICA",
-      "amount": -99.90,
+      "amount": -99.9,
       "currencyCode": "BRL",
       "date": "2025-09-02T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
       "balance": 1790.12,
-      "category": "Gym",
-      "categoryId": "05060000",
+      "category": "Gyms and fitness centers",
+      "categoryId": "07030001",
       "merchant": {
         "name": "Smart Fit",
         "businessName": "SMART FIT ESCOLA DE GINASTICA E DANCA SA",
@@ -65,14 +70,14 @@
       "accountId": "conta-inter-bank",
       "description": "Academia Smart Fit",
       "descriptionRaw": "SMART FIT ESCOLA DE GINASTICA",
-      "amount": -99.90,
+      "amount": -99.9,
       "currencyCode": "BRL",
       "date": "2025-08-02T00:00:00.000Z",
       "type": "DEBIT",
       "status": "POSTED",
       "balance": 1890.02,
-      "category": "Gym",
-      "categoryId": "05060000",
+      "category": "Gyms and fitness centers",
+      "categoryId": "07030001",
       "merchant": {
         "name": "Smart Fit",
         "businessName": "SMART FIT ESCOLA DE GINASTICA E DANCA SA",

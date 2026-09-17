@@ -347,3 +347,106 @@ def test_arquivo_de_regras_do_repositorio_e_valido() -> None:
 
     assert regras.padroes_fatura, "o exemplo deve trazer padrões de fatura"
     assert regras.data_inicial == date(2025, 8, 1)
+
+
+# ---------------------------------------------------------------------------
+# [[item]]: os itemId, que não podem ser listados pela API
+# ---------------------------------------------------------------------------
+
+# O mínimo para o arquivo ser válido; o que se testa vem depois dele.
+GERAL = """[geral]
+data_inicial = 2025-08-01
+frescor_dias_padrao = 5
+"""
+
+
+def test_item_com_id_que_nao_e_uuid_e_recusado(projeto: Path) -> None:
+    """Falhar cedo: id torto descoberto aqui em vez de num 404 lá.
+
+    O itemId é copiado à mão do Dashboard, porque listar items é bloqueado.
+    Cópia manual erra, e a validação de formato é de graça.
+    """
+    caminho = _escrever_regras(
+        projeto,
+        GERAL + """
+[[item]]
+id = "nao-e-uuid"
+""",
+    )
+
+    with pytest.raises(ErroDeConfiguracao) as erro:
+        carregar_regras(caminho)
+
+    assert "UUID" in str(erro.value)
+
+
+def test_item_repetido_e_recusado(projeto: Path) -> None:
+    """Id duplicado ingeriria a mesma instituição duas vezes."""
+    caminho = _escrever_regras(
+        projeto,
+        GERAL + """
+[[item]]
+id = "11111111-1111-4111-8111-111111111111"
+instituicao = "Nubank"
+
+[[item]]
+id = "11111111-1111-4111-8111-111111111111"
+instituicao = "Nubank de novo"
+""",
+    )
+
+    with pytest.raises(ErroDeConfiguracao) as erro:
+        carregar_regras(caminho)
+
+    assert "mais de uma vez" in str(erro.value)
+
+
+def test_sem_item_nao_e_erro(projeto: Path) -> None:
+    """O modo offline não precisa de itemId nenhum.
+
+    Cobrar isso aqui atrapalharia o desenvolvimento. Quem cobra é a ingestão
+    online, que sabe dizer o que faltou e onde pegar.
+    """
+    regras = carregar_regras(_escrever_regras(projeto, GERAL))
+
+    assert regras.itens == ()
+
+
+def test_instituicao_do_item_e_obrigatoria(projeto: Path) -> None:
+    """Sem ela, as instituições viram uma só.
+
+    O conector MeuPluggy (200) é agregador: `connector.name` devolve
+    "MeuPluggy" para TODOS os items. Contra os dados reais, isso fez as 656
+    transações e as 8 contas ficarem com a mesma instituição — `patrimonio`
+    colapsou numa linha e `frescor` deixou de saber quem tinha parado.
+    """
+    caminho = _escrever_regras(
+        projeto,
+        GERAL + """
+[[item]]
+id = "11111111-1111-4111-8111-111111111111"
+""",
+    )
+
+    with pytest.raises(ErroDeConfiguracao) as erro:
+        carregar_regras(caminho)
+
+    assert "instituicao" in str(erro.value)
+
+
+def test_rotulo_do_item_vem_da_instituicao(projeto: Path) -> None:
+    """Sem connector (id morto) o rótulo é o que identifica a instituição."""
+    regras = carregar_regras(
+        _escrever_regras(
+            projeto,
+            GERAL + """
+[[item]]
+id = "11111111-1111-4111-8111-111111111111"
+instituicao = "Nubank"
+observacao = "conta corrente + cartão"
+""",
+        )
+    )
+
+    assert regras.itens[0].instituicao == "Nubank"
+    assert regras.itens[0].rotulo == "Nubank"
