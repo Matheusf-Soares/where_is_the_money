@@ -227,3 +227,90 @@ CREATE TABLE IF NOT EXISTS cfg_mapa_categorias (
     observacao            VARCHAR,
     PRIMARY KEY (id_categoria)
 );
+
+-- Personalizações não são espelho do TOML e nunca são reescritas pela ingestão.
+CREATE TABLE IF NOT EXISTS usr_categorias (
+    id VARCHAR PRIMARY KEY, nome VARCHAR NOT NULL, macro_categoria VARCHAR NOT NULL,
+    essencialidade VARCHAR NOT NULL DEFAULT 'nao_definido',
+    comportamento VARCHAR NOT NULL DEFAULT 'nao_definido'
+);
+CREATE TABLE IF NOT EXISTS usr_classificacoes (
+    id_transacao VARCHAR PRIMARY KEY, id_categoria VARCHAR NOT NULL
+);
+CREATE SEQUENCE IF NOT EXISTS usr_historico_seq START 1;
+CREATE TABLE IF NOT EXISTS usr_historico_classificacoes (
+    id BIGINT PRIMARY KEY DEFAULT nextval('usr_historico_seq'),
+    id_transacao VARCHAR NOT NULL, id_categoria_anterior VARCHAR,
+    id_categoria_nova VARCHAR NOT NULL, criado_em TIMESTAMP DEFAULT current_timestamp,
+    desfeito_em TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS usr_regras (
+    id VARCHAR PRIMARY KEY, prioridade INTEGER UNIQUE NOT NULL, padrao VARCHAR NOT NULL,
+    instituicao VARCHAR NOT NULL, id_categoria VARCHAR NOT NULL, ativa BOOLEAN NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usr_atributos (
+    id_transacao VARCHAR PRIMARY KEY, essencialidade VARCHAR NOT NULL,
+    comportamento VARCHAR NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usr_estado (
+    id INTEGER PRIMARY KEY CHECK (id = 1), revisao BIGINT NOT NULL
+);
+INSERT INTO usr_estado VALUES (1, 0) ON CONFLICT DO NOTHING;
+CREATE SEQUENCE IF NOT EXISTS seq_historico_atributos;
+CREATE TABLE IF NOT EXISTS usr_historico_atributos (
+    id BIGINT DEFAULT nextval('seq_historico_atributos') PRIMARY KEY,
+    id_transacao VARCHAR NOT NULL, anterior JSON, novos JSON NOT NULL,
+    criado_em TIMESTAMP DEFAULT current_timestamp, desfeito_em TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS usr_mapas (
+    id_categoria_pluggy VARCHAR PRIMARY KEY, id_categoria VARCHAR NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usr_aliases (
+    descricao_original VARCHAR NOT NULL, instituicao VARCHAR NOT NULL,
+    estabelecimento VARCHAR NOT NULL, PRIMARY KEY(descricao_original, instituicao)
+);
+CREATE TABLE IF NOT EXISTS usr_recorrencias (
+    instituicao VARCHAR NOT NULL, estabelecimento VARCHAR NOT NULL,
+    estado VARCHAR NOT NULL, PRIMARY KEY(instituicao, estabelecimento)
+);
+CREATE TABLE IF NOT EXISTS usr_compras (
+    id VARCHAR PRIMARY KEY, data_compra DATE NOT NULL, valor_total_brl DECIMAL(18,2) NOT NULL,
+    descricao VARCHAR NOT NULL, grupo_parcial BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE TABLE IF NOT EXISTS usr_compra_transacoes (
+    id_transacao VARCHAR PRIMARY KEY, id_compra VARCHAR NOT NULL
+);
+CREATE TABLE IF NOT EXISTS log_sincronizacoes (
+    instituicao VARCHAR PRIMARY KEY, tentado_em TIMESTAMP, sucesso_em TIMESTAMP,
+    desde DATE, ate DATE, estado VARCHAR, mensagem VARCHAR
+);
+
+INSERT INTO usr_categorias (id, nome, macro_categoria)
+SELECT id, nome, macro_categoria FROM (VALUES
+    ('alimentacao-geral', 'Geral', 'Alimentação'),
+    ('alimentacao-mercado', 'Mercado', 'Alimentação'),
+    ('alimentacao-delivery', 'Delivery', 'Alimentação'),
+    ('alimentacao-restaurantes', 'Restaurantes', 'Alimentação'),
+    ('moradia-geral', 'Geral', 'Moradia'),
+    ('moradia-aluguel', 'Aluguel', 'Moradia'),
+    ('moradia-contas', 'Contas da casa', 'Moradia'),
+    ('transporte-geral', 'Geral', 'Transporte'),
+    ('transporte-combustivel', 'Combustível', 'Transporte'),
+    ('transporte-aplicativo', 'Transporte por aplicativo', 'Transporte'),
+    ('transporte-publico', 'Transporte público', 'Transporte'),
+    ('saude-geral', 'Geral', 'Saúde'),
+    ('saude-academia', 'Academia', 'Saúde'),
+    ('saude-farmacia', 'Farmácia', 'Saúde'),
+    ('saude-consultas', 'Consultas', 'Saúde'),
+    ('educacao-geral', 'Geral', 'Educação'),
+    ('educacao-cursos', 'Cursos', 'Educação'),
+    ('lazer-geral', 'Geral', 'Lazer'),
+    ('lazer-streaming', 'Streaming', 'Lazer'),
+    ('lazer-viagens', 'Viagens', 'Lazer'),
+    ('compras-pessoais-geral', 'Geral', 'Compras pessoais'),
+    ('compras-pessoais-vestuario', 'Vestuário', 'Compras pessoais'),
+    ('servicos-geral', 'Geral', 'Serviços'),
+    ('impostos-tarifas-geral', 'Geral', 'Impostos e tarifas'),
+    ('doacoes-presentes-geral', 'Geral', 'Doações e presentes')
+) AS sementes(id, nome, macro_categoria)
+ON CONFLICT DO NOTHING;

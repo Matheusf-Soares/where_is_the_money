@@ -39,7 +39,8 @@ from financas.frescor import atrasadas, verificar_frescor
 from financas.ingestao import ingerir
 from financas.persistencia import Banco
 from financas.pluggy import ErroPluggy, criar_cliente
-from financas.publicacao import ErroDePublicacao, publicar, servir
+from financas.publicacao import ErroDePublicacao, publicar
+from financas.servidor import servir_local
 from financas.views import ErroDeView, aplicar_views
 
 SAIDA_OK = 0
@@ -265,6 +266,8 @@ def comando_publicar(argumentos: argparse.Namespace, config: Configuracao) -> in
 
     with Banco.abrir(config.caminho_banco) as banco:
         banco.criar_schema()
+        banco.gravar_regras(config.regras)
+        aplicar_views(banco, raiz_do_projeto() / "sql")
         resultado = publicar(banco, destino)
 
     print(f"publicado em {destino}")
@@ -276,13 +279,20 @@ def comando_publicar(argumentos: argparse.Namespace, config: Configuracao) -> in
 
     if argumentos.servir:
         print()
-        servir(frontend, argumentos.porta)
+        servir_local(config, frontend, argumentos.porta, destino)
     else:
         print(
             f"\nPara abrir: python -m financas publicar --servir\n"
             f"(o navegador não consegue ler os Parquet por file://)"
         )
 
+    return SAIDA_OK
+
+
+def comando_servir(argumentos: argparse.Namespace, config: Configuracao) -> int:
+    """Abre a aplicação com personalizações locais persistentes."""
+    frontend = argumentos.frontend or (raiz_do_projeto().parent / "frontend")
+    servir_local(config, frontend, argumentos.porta)
     return SAIDA_OK
 
 
@@ -585,6 +595,11 @@ def construir_analisador() -> argparse.ArgumentParser:
         "--porta", type=int, default=8000, help="porta do servidor (padrão: 8000)"
     )
     publicar_.set_defaults(executar=comando_publicar)
+
+    servir_ = sub.add_parser("servir", help="abre a aplicação com edição local", parents=[globais])
+    servir_.add_argument("--frontend", type=Path, help="raiz do frontend (padrão: ../frontend)")
+    servir_.add_argument("--porta", type=int, default=8000, help="porta local (padrão: 8000)")
+    servir_.set_defaults(executar=comando_servir)
 
     categorias_ = sub.add_parser(
         "categorias",

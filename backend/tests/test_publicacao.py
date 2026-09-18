@@ -35,6 +35,11 @@ def ler_parquet(caminho, consulta: str):
     return duckdb.connect().execute(consulta.format(arquivo=caminho.as_posix())).fetchone()
 
 
+def arquivo_publicado(destino, tabela):
+    manifesto = json.loads((destino / NOME_DO_MANIFESTO).read_text(encoding="utf-8"))
+    return destino / manifesto["arquivos"][tabela]
+
+
 # ---------------------------------------------------------------------------
 # Fidelidade: o que está no disco é o que a view diz
 # ---------------------------------------------------------------------------
@@ -44,7 +49,7 @@ def test_publica_todas_as_tabelas(banco_com_views: Banco, tmp_path) -> None:
     resultado = publicar(banco_com_views, tmp_path / "dados")
 
     for tabela in TABELAS_PUBLICADAS:
-        assert (tmp_path / "dados" / f"{tabela}.parquet").is_file()
+        assert arquivo_publicado(tmp_path / "dados", tabela).is_file()
     assert set(resultado.linhas) == set(TABELAS_PUBLICADAS)
 
 
@@ -61,7 +66,7 @@ def test_parquet_de_gastos_bate_com_a_view(banco_com_views: Banco, tmp_path) -> 
         "SELECT count(*), sum(valor) FROM gastos"
     ).fetchone()
     do_disco = ler_parquet(
-        destino / "gastos.parquet",
+        arquivo_publicado(destino, "gastos"),
         "SELECT count(*), sum(valor) FROM read_parquet('{arquivo}')",
     )
 
@@ -80,7 +85,7 @@ def test_parquet_preserva_as_bandeiras_de_auditoria(
         for linha in duckdb.connect()
         .execute(
             f"DESCRIBE SELECT * FROM read_parquet("
-            f"'{(destino / 'stg_transacoes.parquet').as_posix()}')"
+            f"'{arquivo_publicado(destino, 'stg_transacoes').as_posix()}')"
         )
         .fetchall()
     }
@@ -105,15 +110,17 @@ def test_publicar_e_idempotente(banco_com_views: Banco, tmp_path) -> None:
     assert primeira.linhas == segunda.linhas
 
 
-def test_parquet_orfao_e_removido(banco_com_views: Banco, tmp_path) -> None:
-    """Sobra de uma publicação anterior apareceria na tela como dado atual."""
+def test_parquet_orfao_nao_e_publicado(banco_com_views: Banco, tmp_path) -> None:
+    """Só os caminhos do manifesto são publicados; arquivos avulsos são preservados."""
     destino = tmp_path / "dados"
     destino.mkdir()
     (destino / "tabela_que_nao_existe_mais.parquet").write_bytes(b"lixo")
 
     publicar(banco_com_views, destino)
 
-    assert not (destino / "tabela_que_nao_existe_mais.parquet").exists()
+    manifesto = json.loads((destino / NOME_DO_MANIFESTO).read_text(encoding="utf-8"))
+    assert "tabela_que_nao_existe_mais" not in manifesto["arquivos"]
+    assert (destino / "tabela_que_nao_existe_mais.parquet").read_bytes() == b"lixo"
 
 
 def test_nao_apaga_arquivo_que_nao_e_nosso(banco_com_views: Banco, tmp_path) -> None:
@@ -230,4 +237,4 @@ def test_cria_o_destino_se_nao_existir(banco_com_views: Banco, tmp_path) -> None
 
     publicar(banco_com_views, destino)
 
-    assert (destino / "gastos.parquet").is_file()
+    assert arquivo_publicado(destino, "gastos").is_file()

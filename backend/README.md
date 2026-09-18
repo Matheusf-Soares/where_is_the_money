@@ -8,9 +8,9 @@ banco local e responder, com SQL, perguntas que os apps de controle financeiro
 prontos não deixam responder — quanto gastei por categoria, quais assinaturas
 estão ativas, qual categoria fugiu da média, como o patrimônio evoluiu.
 
-> **Estado atual:** fase 1 completa — ingestão, persistência, views e testes.
-> Falta validar contra a API real, o que é feito fora do ambiente de
-> desenvolvimento. Ver [Estado atual](#estado-atual).
+> A aplicação inclui relatórios locais e classificação persistente pela interface.
+> Para abrir, execute `python -m financas servir`. O [guia da aplicação](../README.md)
+> descreve os filtros, as duas leituras das compras e a publicação versionada.
 
 ---
 
@@ -36,12 +36,12 @@ quatro. Os apps de controle financeiro prontos até agregam isso, mas engessam a
 categorização e não deixam construir série histórica customizada.
 
 O objetivo aqui é ter **os dados brutos em casa**, num banco analítico local, e
-tratar a análise como um problema de SQL. O frontend virá depois (fase 3) e vai
-consumir as views definidas neste backend. Por isso vale a regra: **as views são
+tratar a análise como um problema de SQL. O frontend consulta as views publicadas
+em Parquet através do DuckDB-WASM. Por isso vale a regra: **as views são
 o contrato público do projeto**.
 
-**Fora de escopo nesta fase:** dashboard, gráfico, frontend, Docker, deploy,
-autenticação. É um projeto local, single-user.
+**Fora de escopo:** nuvem, orçamentos, metas e classificação por IA.
+É um projeto local, single-user; a API local grava apenas personalizações.
 
 ---
 
@@ -506,7 +506,7 @@ python -m financas publicar    # exporta as views em Parquet para o frontend
 python -m financas status      # o que existe no banco
 ```
 
-Para ver o dashboard: `python -m financas publicar --servir` e abrir
+Para consultar e editar: `python -m financas servir` e abrir
 `http://127.0.0.1:8000`. **Não abra o `index.html` por `file://`** — o
 DuckDB-WASM usa Web Workers e range requests, e os dois exigem origem HTTP.
 
@@ -551,10 +551,9 @@ O backend está sendo construído em incrementos revisáveis, nesta ordem:
 | e | **Views SQL** — `gastos`, `recorrencias`, `patrimonio` | ✅ concluída |
 | f | **Testes de ponta a ponta** — armadilhas 1, 2, 3 e 7 | ✅ concluída |
 
-**325 testes passando**, nenhum tocando rede ou credencial.
-
-A fase 1 está completa. O backend ingere, persiste, transforma e responde —
-falta rodar contra a API real, o que é feito fora deste ambiente.
+A suíte inclui contratos financeiros, personalizações, publicação atômica e API
+local com dados sintéticos. Execute `python -m pytest -q` para verificar a versão
+do checkout. Nenhum teste usa credenciais reais; testes HTTP locais verificam a API.
 
 - [`config.py`](src/financas/config.py) — configuração e regras
 - [`pluggy/cliente.py`](src/financas/pluggy/cliente.py) · [`pluggy/fixtures.py`](src/financas/pluggy/fixtures.py) — API real e offline
@@ -563,10 +562,14 @@ falta rodar contra a API real, o que é feito fora deste ambiente.
 - [`ingestao.py`](src/financas/ingestao.py) — travessia e isolamento de falha
 - [`frescor.py`](src/financas/frescor.py) — detector da armadilha 4
 - [`views.py`](src/financas/views.py) · [`cli.py`](src/financas/cli.py) — orquestração
-- [`sql/staging/`](sql/staging/) · [`sql/marts/`](sql/marts/) — as 6 views
+- [`sql/staging/`](sql/staging/) · [`sql/marts/`](sql/marts/) — contratos legados e analíticos
+- [`personalizacoes.py`](src/financas/personalizacoes.py) — validação, histórico e desfazer
+- [`servidor.py`](src/financas/servidor.py) — API em loopback e conflitos explícitos
+- [`publicacao.py`](src/financas/publicacao.py) — gerações imutáveis e manifesto atômico
 
 Tudo que a seção 8 descreve existe no disco. A `frontend/` na raiz guarda o
-dashboard estático da fase 3, alimentado por `python -m financas publicar`.
+aplicação modular sem build, alimentada por `python -m financas publicar`.
+`python -m financas servir` reaplica as views, publica e habilita a edição local.
 
 ### O tamanho do problema, em números
 
@@ -639,8 +642,7 @@ ORDER BY valor DESC;
 A segunda consulta é a que revela filtro faltando: transferência ou fatura que
 sobrou em `gastos` é padrão que ninguém escreveu ainda.
 
-### Roadmap depois desta fase
+### Evoluções futuras
 
-- **Fase 2:** categorização própria, sobreposta à categoria que a Pluggy devolve
-- **Fase 3:** frontend consumindo as views
-- **Fase 4 (talvez):** migração para GCP com execução agendada
+Orçamentos, metas, sincronização em nuvem e classificação por IA não fazem parte
+da etapa atual. A prioridade é investigar gastos com números verificáveis.

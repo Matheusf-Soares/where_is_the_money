@@ -159,6 +159,7 @@ def ingerir(
         "raw_investimentos": [],
     }
     total_de_contas = 0
+    estados: dict[str, list[str]] = {}
 
     # O nome configurado vence o do conector; ver `nome_da_instituicao`.
     rotulos = {i.id.lower(): i.instituicao for i in regras.itens}
@@ -166,6 +167,7 @@ def ingerir(
     for item in itens:
         id_item = item.get("id", "")
         instituicao = nome_da_instituicao(item, rotulos.get(str(id_item).lower(), ""))
+        estados.setdefault(instituicao, [])
 
         # A saúde é avaliada antes de buscar: um item cujo id não existe mais
         # não tem conta nenhuma para percorrer, e insistir só gastaria
@@ -181,6 +183,7 @@ def ingerir(
                     f"e troque no regras.toml.",
                 )
             )
+            estados[instituicao].append("falha")
             continue
         if problema:
             registrador.warning("%s: %s", instituicao, problema)
@@ -195,6 +198,7 @@ def ingerir(
             # idempotente, basta rodar de novo depois de resolver.
             registrador.error("%s: %s", instituicao, erro)
             falhas.append(FalhaDeInstituicao(instituicao, str(erro)))
+            estados[instituicao].append("falha")
             continue
 
         total_de_contas += len(contas)
@@ -203,6 +207,7 @@ def ingerir(
         resultados["raw_contas"].append(banco.gravar_contas(contas))
         resultados["raw_transacoes"].append(banco.gravar_transacoes(transacoes))
         resultados["raw_investimentos"].append(banco.gravar_investimentos(investimentos))
+        estados[instituicao].append("acao_necessaria" if problema else "sucesso")
         registrador.info(
             "%s: %d contas, %d transações, %d investimentos",
             instituicao,
@@ -210,6 +215,12 @@ def ingerir(
             len(transacoes),
             len(investimentos),
         )
+
+    for instituicao, tentativas in estados.items():
+        # Duas conexões da mesma instituição não podem mascarar uma falha:
+        # o sucesso representa uma coleta saudável do conjunto inteiro.
+        estado = "falha" if "falha" in tentativas else "acao_necessaria" if "acao_necessaria" in tentativas else "sucesso"
+        _registrar_sincronizacao(banco, instituicao, estado, inicio, hoje)
 
     return ResumoDaIngestao(
         itens=len(itens),
@@ -221,6 +232,23 @@ def ingerir(
         ),
         falhas=tuple(falhas),
         degradados=tuple(degradados),
+    )
+
+
+def _registrar_sincronizacao(banco: Banco, instituicao: str, estado: str, desde: date, ate: date) -> None:
+    """Guarda sucesso da coleta mesmo quando os payloads não mudaram."""
+    sucesso = estado == "sucesso"
+    banco.conexao.execute(
+        """INSERT INTO log_sincronizacoes
+            (instituicao, tentado_em, sucesso_em, desde, ate, estado, mensagem)
+        VALUES (?, now(), CASE WHEN ? THEN now() END, CASE WHEN ? THEN ? END,
+                CASE WHEN ? THEN ? END, ?, '')
+        ON CONFLICT (instituicao) DO UPDATE SET
+            tentado_em = excluded.tentado_em, estado = excluded.estado,
+            sucesso_em = coalesce(excluded.sucesso_em, log_sincronizacoes.sucesso_em),
+            desde = coalesce(excluded.desde, log_sincronizacoes.desde),
+            ate = coalesce(excluded.ate, log_sincronizacoes.ate), mensagem = excluded.mensagem""",
+        [instituicao, sucesso, sucesso, desde, sucesso, ate, estado],
     )
 
 

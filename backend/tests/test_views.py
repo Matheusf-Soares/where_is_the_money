@@ -67,7 +67,7 @@ def test_as_seis_views_do_repositorio_sao_aplicadas(banco_com_views: Banco) -> N
 def test_staging_vem_antes_de_marts(banco_com_views: Banco) -> None:
     camadas = [camada for camada, _ in listar_arquivos(SQL)]
 
-    assert camadas == ["staging"] * 3 + ["marts"] * 3
+    assert camadas == ["staging"] * 3 + ["marts"] * 8
 
 
 def test_reaplicar_views_e_idempotente(banco_com_views: Banco) -> None:

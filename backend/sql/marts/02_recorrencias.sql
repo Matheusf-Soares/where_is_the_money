@@ -28,6 +28,7 @@ por_mes AS (
         mes,
         sum(valor) AS valor_no_mes
     FROM gastos
+    WHERE NOT e_parcelado
     GROUP BY estabelecimento, instituicao, ano, mes
 ),
 resumo AS (
