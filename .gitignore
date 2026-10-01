@@ -36,3 +36,10 @@ node_modules/
 .idea/
 .vscode/
 *.swp
+
+# Ferramentas de agente instaladas localmente: binários e preferências pessoais.
+.agents/
+.claude/
+.codex/
+.impeccable/hook.cache.json
+.impeccable/questions/
