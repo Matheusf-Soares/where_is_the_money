@@ -28,6 +28,7 @@ export async function carregarSnapshot(){
    await nextConnection.query(`CREATE VIEW ${nome} AS SELECT ${cols.join(',')} FROM read_parquet(${sqlLiteral(arquivo)})`);
   }
   const dataset={};for(const nome of TABELAS_UI){if(!novo.arquivos[nome])throw new Error('Publicação incompleta: tabela '+nome+' ausente. Execute python -m financas servir.');dataset[nome]=linhasArrow(await nextConnection.query('SELECT * FROM '+nome));}
+  for(const nome of ['faturas','cobertura_faturas','faturas_abertas','lancamentos_fatura_aberta'])dataset[nome]=novo.arquivos[nome]?linhasArrow(await nextConnection.query('SELECT * FROM '+nome)):[];
   if(rodada!==sequencia){await nextConnection.close();await nextEngine.terminate();return false;}
   const anterior=engine,conn=conexao;
   engine=nextEngine;worker=nextWorker;conexao=nextConnection;manifesto=novo;
