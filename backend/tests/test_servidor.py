@@ -98,6 +98,50 @@ def test_nao_expoe_arquivos_fora_do_frontend(api):
     assert requisitar(api, "/dados/")[0] == 403
 
 
+def test_parquet_responde_intervalos_de_bytes(api):
+    servico, servidor = api
+    arquivo = next(servico.destino.rglob("*.parquet"))
+    caminho = "/dados/" + arquivo.relative_to(servico.destino).as_posix()
+    conteudo = arquivo.read_bytes()
+    porta = servidor.server_port
+
+    def pedir(metodo, intervalo=None):
+        conexao = HTTPConnection("127.0.0.1", porta, timeout=15)
+        cabecalhos = {"Origin": f"http://127.0.0.1:{porta}"}
+        if intervalo is not None:
+            cabecalhos["Range"] = intervalo
+        conexao.request(metodo, caminho, headers=cabecalhos)
+        resposta = conexao.getresponse()
+        resultado = resposta.status, dict(resposta.getheaders()), resposta.read()
+        conexao.close()
+        return resultado
+
+    status, headers, corpo = pedir("GET", "bytes=0-99")
+    assert status == 206
+    assert headers["Content-Range"] == f"bytes 0-99/{len(conteudo)}"
+    assert headers["Content-Length"] == "100"
+    assert headers["Accept-Ranges"] == "bytes"
+    assert corpo == conteudo[:100]
+
+    status, headers, corpo = pedir("GET")
+    assert status == 200 and corpo == conteudo
+    assert headers["Accept-Ranges"] == "bytes"
+
+    status, headers, corpo = pedir("GET", "bytes=-64")
+    assert status == 206 and corpo == conteudo[-64:]
+    assert headers["Content-Length"] == "64"
+
+    status, headers, corpo = pedir("HEAD", "bytes=100-")
+    assert status == 206 and corpo == b""
+    assert headers["Content-Length"] == str(len(conteudo) - 100)
+
+    status, headers, corpo = pedir("GET", f"bytes={len(conteudo)}-")
+    assert status == 416 and corpo == b""
+    assert headers["Content-Range"] == f"bytes */{len(conteudo)}"
+
+    assert pedir("GET", "bytes=0-1,3-4")[0] == 416
+
+
 def test_duas_instancias_compartilham_revisao_persistente(api):
     from financas.servidor import Conflito
     primeiro = api[0]

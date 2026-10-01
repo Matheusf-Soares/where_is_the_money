@@ -47,6 +47,9 @@ class ClienteComFalha:
     def listar_investimentos(self, id_item: str) -> list[dict[str, Any]]:
         return self._interno.listar_investimentos(id_item)
 
+    def listar_faturas(self, id_conta: str) -> list[dict[str, Any]]:
+        return self._interno.listar_faturas(id_conta)
+
 
 class ClienteComItemDoente:
     """Envelopa um cliente e adultera o estado de um item.
@@ -72,6 +75,9 @@ class ClienteComItemDoente:
 
     def listar_investimentos(self, id_item: str) -> list[dict[str, Any]]:
         return self._interno.listar_investimentos(id_item)
+
+    def listar_faturas(self, id_conta: str) -> list[dict[str, Any]]:
+        return self._interno.listar_faturas(id_conta)
 
 
 @pytest.fixture

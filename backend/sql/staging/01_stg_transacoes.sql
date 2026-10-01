@@ -1,8 +1,9 @@
 -- stg_transacoes: limpeza, tipagem e classificação de ruído.
 --
--- Esta view não decide o que é gasto — ela só marca. Cada transação ganha três
--- bandeiras (`e_pagamento_de_fatura`, `e_transferencia_propria`, `e_aplicacao`)
--- e a view `gastos` decide o que fazer com elas.
+-- Esta view não decide o que é gasto — ela só marca. Cada transação ganha as
+-- bandeiras (`e_pagamento_de_fatura`, `e_transferencia_propria`, `e_aplicacao`,
+-- `e_saldo_anterior`, `e_pendente_substituida`) e a view `gastos` decide o que
+-- fazer com elas.
 --
 -- A separação importa: quem quiser auditar "por que essa transação sumiu do
 -- meu total?" consulta stg_transacoes e vê a bandeira que a excluiu, em vez de
@@ -119,7 +120,9 @@ rotulos AS (
         max(CASE WHEN chave = 'categoria_padrao' THEN valor END) AS categoria_padrao,
         max(CASE WHEN chave = 'grupo_padrao'     THEN valor END) AS grupo_padrao
     FROM cfg_geral
-)
+),
+
+marcada AS (
 SELECT
     b.id_transacao,
     b.id_conta,
@@ -254,11 +257,46 @@ SELECT
             WHERE c.bandeira = 'aplicacao'
               AND b.categoria_busca LIKE c.padrao
         )
-    ) AS e_aplicacao
+    ) AS e_aplicacao,
+
+    -- Saldo da fatura anterior relançado na seguinte ("Saldo em atraso", "Saldo
+    -- em rotativo"). As compras já entraram no gasto quando aconteceram; contar
+    -- o saldo de novo dobrava o mês. Só por texto: a Pluggy põe juros e multa
+    -- na mesma categoria, e esses são custo de verdade.
+    EXISTS (
+        SELECT 1 FROM cfg_padroes_saldo_anterior s
+        WHERE b.instituicao_busca LIKE s.instituicao
+          AND (b.descricao_busca LIKE s.padrao OR b.original_busca LIKE s.padrao)
+    ) AS e_saldo_anterior
 FROM base b
 LEFT JOIN regra_casada rc
        ON rc.id_transacao = b.id_transacao
       AND rc.posicao = 1
 LEFT JOIN cfg_mapa_categorias m
        ON m.id_categoria = b.id_categoria
-CROSS JOIN rotulos r;
+CROSS JOIN rotulos r
+)
+-- Pendente reemitida. A Pluggy lança a transação pendente com um id NOVO e a
+-- pendente antiga continua no raw, que é sagrado e nunca apaga. As duas
+-- contavam. O gêmeo é a lançada da mesma conta, com o mesmo valor, até três
+-- dias de distância e o mesmo texto; pagamento de fatura troca o texto ao ser
+-- lançado ("PAGAMENTO ON LINE" vira "Pagamento recebido"), então dois
+-- pagamentos de fatura também casam. Dois abastecimentos de mesmo valor em
+-- postos diferentes não casam: são dois gastos.
+SELECT
+    m.*,
+    (
+        upper(coalesce(m.situacao, '')) = 'PENDING'
+        AND NOT m.e_futura
+        AND EXISTS (
+            SELECT 1 FROM marcada l
+            WHERE l.id_conta = m.id_conta
+              AND l.id_transacao <> m.id_transacao
+              AND upper(coalesce(l.situacao, '')) = 'POSTED'
+              AND l.valor_assinado = m.valor_assinado
+              AND abs(date_diff('day', l.data, m.data)) <= 3
+              AND (lower(l.descricao) = lower(m.descricao)
+                   OR (l.e_pagamento_de_fatura AND m.e_pagamento_de_fatura))
+        )
+    ) AS e_pendente_substituida
+FROM marcada m;

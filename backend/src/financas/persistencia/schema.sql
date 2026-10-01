@@ -26,6 +26,36 @@
 -- Transações — chave natural: id
 -- ---------------------------------------------------------------------------
 
+-- Faturas têm identidade oficial por cartão e não são inferidas do saldo.
+CREATE TABLE IF NOT EXISTS raw_faturas (
+    id VARCHAR NOT NULL,
+    id_conta VARCHAR NOT NULL,
+    id_item VARCHAR,
+    instituicao VARCHAR,
+    vencimento DATE,
+    fechamento DATE,
+    valor_total DECIMAL(18,2),
+    moeda VARCHAR,
+    pagamento_minimo DECIMAL(18,2),
+    permite_parcelamento BOOLEAN,
+    pagamentos_json VARCHAR,
+    encargos_json VARCHAR,
+    payload_json VARCHAR NOT NULL,
+    ingerido_em TIMESTAMP NOT NULL,
+    atualizado_em TIMESTAMP NOT NULL,
+    PRIMARY KEY (id, id_conta)
+);
+
+CREATE TABLE IF NOT EXISTS log_faturas (
+    id_conta VARCHAR PRIMARY KEY,
+    estado VARCHAR NOT NULL,
+    coletado_em TIMESTAMP,
+    tentado_em TIMESTAMP NOT NULL,
+    transacoes_em TIMESTAMP,
+    transacoes_desde DATE,
+    mensagem VARCHAR NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS raw_transacoes (
     id                    VARCHAR       NOT NULL,
     id_conta              VARCHAR       NOT NULL,
@@ -151,6 +181,16 @@ CREATE TABLE IF NOT EXISTS cfg_padroes_fatura (
 -- como débito em BANK, não pelo contexto Investments. Não é despesa: o dinheiro
 -- continua sendo seu, só mudou de lugar.
 CREATE TABLE IF NOT EXISTS cfg_padroes_aplicacao (
+    instituicao           VARCHAR       NOT NULL,  -- padrão LIKE, '%' vale para todas
+    padrao                VARCHAR       NOT NULL,  -- sintaxe LIKE, em minúsculas
+    observacao            VARCHAR
+);
+
+-- Saldo da fatura anterior relançado na seguinte ("Saldo em atraso", "Saldo em
+-- rotativo"). As compras já foram contadas quando aconteceram; o saldo é a mesma
+-- despesa de novo. Sem reforço por categoria de propósito: a Pluggy põe juros e
+-- multa na mesma categoria, e esses são custo real.
+CREATE TABLE IF NOT EXISTS cfg_padroes_saldo_anterior (
     instituicao           VARCHAR       NOT NULL,  -- padrão LIKE, '%' vale para todas
     padrao                VARCHAR       NOT NULL,  -- sintaxe LIKE, em minúsculas
     observacao            VARCHAR

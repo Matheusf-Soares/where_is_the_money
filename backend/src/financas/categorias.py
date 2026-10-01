@@ -169,6 +169,8 @@ def auditar(banco: Banco) -> Auditoria:
           AND NOT t.e_pagamento_de_fatura
           AND NOT t.e_transferencia_propria
           AND NOT t.e_aplicacao
+          AND NOT t.e_saldo_anterior
+          AND NOT t.e_pendente_substituida
         GROUP BY t.id_categoria
         ORDER BY count(*) DESC
         """
@@ -187,6 +189,8 @@ def auditar(banco: Banco) -> Auditoria:
           AND NOT e_pagamento_de_fatura
           AND NOT e_transferencia_propria
           AND NOT e_aplicacao
+          AND NOT e_saldo_anterior
+          AND NOT e_pendente_substituida
         """
     ).fetchone()
 

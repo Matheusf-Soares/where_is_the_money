@@ -47,7 +47,8 @@ WITH contas AS (
         coalesce(a.estabelecimento, b.estabelecimento, b.descricao) AS estabelecimento_resolvido,
         coalesce(b.parcela_total > 1, false) AS e_parcelado,
         coalesce(b.valor_assinado < 0 AND NOT b.e_futura AND NOT b.e_pagamento_de_fatura
-            AND NOT b.e_transferencia_propria AND NOT b.e_aplicacao, false) AS e_gasto
+            AND NOT b.e_transferencia_propria AND NOT b.e_aplicacao
+            AND NOT b.e_saldo_anterior AND NOT b.e_pendente_substituida, false) AS e_gasto
     FROM base b
     LEFT JOIN usr_classificacoes m ON m.id_transacao = b.id_transacao
     LEFT JOIN regras r ON r.id_transacao = b.id_transacao AND r.posicao = 1
@@ -68,10 +69,13 @@ SELECT b.id_transacao, b.id_conta, b.instituicao, b.conta, b.tipo_de_conta,
     coalesce(a.comportamento, c.comportamento, 'nao_definido') AS comportamento,
     b.e_parcelado, b.parcela_numero, b.parcela_total, b.e_futura,
     b.e_pagamento_de_fatura, b.e_transferencia_propria, b.e_aplicacao, b.e_gasto,
+    b.e_saldo_anterior, b.e_pendente_substituida,
     CASE WHEN b.e_gasto THEN NULL
          WHEN b.e_pagamento_de_fatura THEN 'pagamento_de_fatura'
          WHEN b.e_transferencia_propria THEN 'transferencia_propria'
          WHEN b.e_aplicacao THEN 'aplicacao'
+         WHEN b.e_pendente_substituida THEN 'pendente_substituida'
+         WHEN b.e_saldo_anterior THEN 'saldo_de_fatura_anterior'
          WHEN b.e_futura THEN 'futura'
          ELSE 'entrada_ou_sem_valor' END AS motivo_exclusao,
     b.data_compra_fonte, b.valor_total_fonte, b.id_fatura, cp.id_compra,
@@ -81,7 +85,19 @@ SELECT b.id_transacao, b.id_conta, b.instituicao, b.conta, b.tipo_de_conta,
     NOT b.e_parcelado AND EXISTS (SELECT 1 FROM usr_recorrencias r
         WHERE lower(trim(r.instituicao)) = lower(trim(b.instituicao))
           AND lower(trim(r.estabelecimento)) = lower(trim(b.estabelecimento_resolvido))
-          AND r.estado = 'ativa') AS e_recorrente
+          AND r.estado = 'ativa') AS e_recorrente,
+    extract(isodow FROM b.data)::INTEGER AS dia_semana_iso,
+    CASE extract(isodow FROM b.data)
+        WHEN 1 THEN 'segunda-feira' WHEN 2 THEN 'terça-feira' WHEN 3 THEN 'quarta-feira'
+        WHEN 4 THEN 'quinta-feira' WHEN 5 THEN 'sexta-feira' WHEN 6 THEN 'sábado'
+        WHEN 7 THEN 'domingo' END AS dia_semana,
+    coalesce(b.data_compra_fonte, b.data) AS data_gasto,
+    CASE WHEN b.data_compra_fonte IS NOT NULL THEN 'purchaseDate' ELSE 'data' END AS origem_data_gasto,
+    extract(isodow FROM coalesce(b.data_compra_fonte, b.data))::INTEGER AS dia_semana_gasto_iso,
+    CASE extract(isodow FROM coalesce(b.data_compra_fonte, b.data))
+        WHEN 1 THEN 'segunda-feira' WHEN 2 THEN 'terça-feira' WHEN 3 THEN 'quarta-feira'
+        WHEN 4 THEN 'quinta-feira' WHEN 5 THEN 'sexta-feira' WHEN 6 THEN 'sábado'
+        WHEN 7 THEN 'domingo' END AS dia_semana_gasto
 FROM resolucao b
 LEFT JOIN usr_categorias c ON c.id = b.id_categoria_propria
 LEFT JOIN usr_atributos a ON a.id_transacao = b.id_transacao

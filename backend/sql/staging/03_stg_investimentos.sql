@@ -20,11 +20,19 @@ SELECT
     taxa,
     tipo_taxa,
     quantidade,
-    valor_aplicado,
+    -- Valor aplicado é só o `amountOriginal` do payload. Linhas antigas do raw
+    -- guardaram `amount` (o valor atual) neste campo; ler do payload corrige
+    -- sem reingestão e sem tocar no raw.
+    try_cast(json_extract_string(try_cast(payload_json AS JSON), '$.amountOriginal') AS DECIMAL(18,2))
+                                                    AS valor_aplicado,
     saldo,
-    -- A API manda amountProfit, mas ela nem sempre vem. Recalcular a partir do
-    -- que existe evita um NULL bobo no meio do patrimônio.
-    coalesce(rendimento, saldo - valor_aplicado)  AS rendimento,
+    -- Rendimento informado pela fonte vence. Sem ele, só há conta a fazer
+    -- quando existe valor aplicado de verdade; do contrário fica NULL, porque
+    -- "não informado" não é zero.
+    coalesce(
+        rendimento,
+        saldo - try_cast(json_extract_string(try_cast(payload_json AS JSON), '$.amountOriginal') AS DECIMAL(18,2))
+    )                                               AS rendimento,
     situacao,
     data_posicao = max(data_posicao) OVER ()      AS e_retrato_atual
 FROM raw_investimentos;

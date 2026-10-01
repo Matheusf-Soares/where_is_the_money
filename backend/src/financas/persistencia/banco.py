@@ -46,6 +46,7 @@ CHAVES_NATURAIS: dict[str, tuple[str, ...]] = {
     "raw_transacoes": ("id",),
     "raw_contas": ("id", "data_posicao"),
     "raw_investimentos": ("id", "data_posicao"),
+    "raw_faturas": ("id", "id_conta"),
 }
 
 # Colunas de controle: preenchidas pelo banco, não por quem chama.
@@ -157,6 +158,9 @@ class Banco:
     def gravar_investimentos(self, linhas: Iterable[dict[str, Any]]) -> ResultadoUpsert:
         return self._gravar("raw_investimentos", linhas)
 
+    def gravar_faturas(self, linhas: Iterable[dict[str, Any]]) -> ResultadoUpsert:
+        return self._gravar("raw_faturas", linhas)
+
     def gravar_regras(self, regras: Regras) -> None:
         """Copia o `regras.toml` para as tabelas `cfg_*`.
 
@@ -175,6 +179,13 @@ class Banco:
                 [
                     (p.instituicao, p.padrao, p.observacao)
                     for p in regras.padroes_aplicacao
+                ],
+            )
+            self._reescrever(
+                "cfg_padroes_saldo_anterior",
+                [
+                    (p.instituicao, p.padrao, p.observacao)
+                    for p in regras.padroes_saldo_anterior
                 ],
             )
             self._reescrever(

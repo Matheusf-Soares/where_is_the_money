@@ -157,13 +157,32 @@ def normalizar_investimento(
         "taxa": _decimal(bruto.get("rate"), casas=6),
         "tipo_taxa": _texto(bruto.get("rateType")),
         "quantidade": _decimal(bruto.get("quantity"), casas=8),
-        "valor_aplicado": _decimal(
-            bruto.get("amountOriginal") if bruto.get("amountOriginal") is not None
-            else bruto.get("amount")
-        ),
+        # Só `amountOriginal` é valor aplicado. `amount` é o valor bruto atual: usá-lo
+        # como aplicado fazia saldo − aplicado = 0 e a tela afirmava rendimento zero
+        # para toda ação e FII, um número que a fonte nunca mandou.
+        "valor_aplicado": _decimal(bruto.get("amountOriginal")),
         "saldo": _decimal(bruto.get("balance")),
         "rendimento": _decimal(bruto.get("amountProfit")),
         "situacao": _texto(bruto.get("status")),
+        "payload_json": serializar(bruto),
+    }
+
+
+def normalizar_fatura(
+    bruto: dict[str, Any], *, id_conta: str, id_item: str, instituicao: str
+) -> dict[str, Any]:
+    """Preserva o total oficial e o payload; pagamento não é abatido do total."""
+    return {
+        "id": _texto(bruto.get("id")), "id_conta": id_conta,
+        "id_item": id_item, "instituicao": instituicao,
+        "vencimento": _data(bruto.get("dueDate")),
+        "fechamento": _data(bruto.get("billClosingDate")),
+        "valor_total": _decimal(bruto.get("totalAmount")),
+        "moeda": _texto(bruto.get("totalAmountCurrencyCode")),
+        "pagamento_minimo": _decimal(bruto.get("minimumPaymentAmount")),
+        "permite_parcelamento": bruto.get("allowsInstallments") if isinstance(bruto.get("allowsInstallments"), bool) else None,
+        "pagamentos_json": json.dumps(bruto.get("payments"), ensure_ascii=False, sort_keys=True),
+        "encargos_json": json.dumps(bruto.get("financeCharges"), ensure_ascii=False, sort_keys=True),
         "payload_json": serializar(bruto),
     }
 

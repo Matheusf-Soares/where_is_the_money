@@ -125,6 +125,10 @@ class Cliente(Protocol):
         """Contas de um item, de qualquer tipo (`BANK` ou `CREDIT`)."""
         ...
 
+    def listar_faturas(self, id_conta: str) -> list[dict[str, Any]]:
+        """Faturas oficiais do cartão, percorrendo todas as páginas."""
+        ...
+
     def listar_transacoes(
         self, id_conta: str, desde: date
     ) -> Iterator[dict[str, Any]]:
@@ -289,6 +293,9 @@ class ClienteHttp:
 
     def listar_contas(self, id_item: str) -> list[dict[str, Any]]:
         return list(self._paginar("/accounts", {"itemId": id_item}))
+
+    def listar_faturas(self, id_conta: str) -> list[dict[str, Any]]:
+        return list(self._paginar("/bills", {"accountId": id_conta}))
 
     def listar_transacoes(
         self, id_conta: str, desde: date

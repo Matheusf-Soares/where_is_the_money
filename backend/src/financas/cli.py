@@ -36,6 +36,7 @@ from financas.diagnostico import (
     diagnosticar_item,
 )
 from financas.frescor import atrasadas, verificar_frescor
+from financas.faturas import coletar_faturas
 from financas.ingestao import ingerir
 from financas.persistencia import Banco
 from financas.pluggy import ErroPluggy, criar_cliente
@@ -293,6 +294,30 @@ def comando_servir(argumentos: argparse.Namespace, config: Configuracao) -> int:
     """Abre a aplicação com personalizações locais persistentes."""
     frontend = argumentos.frontend or (raiz_do_projeto().parent / "frontend")
     servir_local(config, frontend, argumentos.porta)
+    return SAIDA_OK
+
+
+def comando_faturas(argumentos: argparse.Namespace, config: Configuracao) -> int:
+    """Atualiza faturas dos cartões já conhecidos e publica um retrato consistente."""
+    destino = argumentos.destino or (raiz_do_projeto().parent / "frontend" / "dados")
+    with Banco.abrir(config.caminho_banco) as banco, criar_cliente(config) as cliente:
+        banco.criar_schema()
+        banco.gravar_regras(config.regras)
+        resumo = coletar_faturas(cliente, banco, config.regras,
+                                  hoje=argumentos.hoje or date.today())
+        aplicar_views(banco, raiz_do_projeto() / "sql")
+        publicar(banco, destino)
+    print(f"{resumo.contas} cartões consultados, {resumo.faturas} faturas recebidas")
+    print(f"publicado em {destino}")
+    if resumo.falhas:
+        _avisar(*(f"FALHOU  {f.instituicao}: {f.motivo}" for f in resumo.falhas))
+        return SAIDA_INGESTAO_PARCIAL
+    if not resumo.contas:
+        _avisar("Nenhum cartão conhecido. Rode 'ingerir' para descobrir as contas.")
+        return SAIDA_SEM_DADOS
+    if not resumo.faturas:
+        _avisar("A fonte não devolveu faturas; consulte a cobertura por cartão na aplicação.")
+        return SAIDA_SEM_DADOS
     return SAIDA_OK
 
 
@@ -556,6 +581,13 @@ def construir_analisador() -> argparse.ArgumentParser:
         "--hoje", type=_data, help="data da posição gravada (padrão: hoje)"
     )
     ingerir_.set_defaults(executar=comando_ingerir)
+
+    faturas_ = sub.add_parser(
+        "faturas", help="coleta faturas dos cartões conhecidos e publica", parents=[globais]
+    )
+    faturas_.add_argument("--hoje", type=_data, help="data de referência (padrão: hoje)")
+    faturas_.add_argument("--destino", type=Path, help="destino da publicação (padrão: frontend/dados)")
+    faturas_.set_defaults(executar=comando_faturas)
 
     views_ = sub.add_parser(
         "views",

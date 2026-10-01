@@ -1,14 +1,18 @@
 """Servidor pessoal: consultas em Parquet, personalizações validadas no DuckDB.
 
-Não acessa a Pluggy. Conexões curtas permitem usar a CLI entre requisições;
+Só consulta a Pluggy na ação explícita de atualizar faturas. Conexões curtas permitem usar a CLI entre requisições;
 gravações concorrentes recebem conflito explícito e nunca são repetidas.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import secrets
 from contextlib import contextmanager
+from dataclasses import asdict
+from datetime import date
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
@@ -17,7 +21,9 @@ from urllib.parse import unquote, urlsplit
 import duckdb
 
 from financas.config import Configuracao, raiz_do_projeto
+from financas.faturas import coletar_faturas
 from financas.persistencia import Banco
+from financas.pluggy import criar_cliente
 from financas.personalizacoes import ConflitoDeRevisao, aplicar_ajuste, obter_catalogo, prever_regra
 from financas.publicacao import ErroDePublicacao, publicar, serializar_json
 from financas.views import aplicar_views
@@ -69,7 +75,8 @@ class ServicoLocal:
 
     def estado(self):
         return {"edicao": True, "token": self.token, "revisao": self.revisao,
-                "versao": self.versao, "publicacao_pendente": self.pendente}
+                "versao": self.versao, "publicacao_pendente": self.pendente,
+                "fonte": self.config.modo}
 
     def atualizar_estado(self):
         with self.banco() as banco:
@@ -87,6 +94,28 @@ class ServicoLocal:
     def previa(self, regra):
         with self.banco() as banco:
             return prever_regra(banco, regra)
+
+    def sincronizar_faturas(self, revisao):
+        """Consulta somente cartões conhecidos, sob a mesma trava das edições."""
+        with self.banco() as banco:
+            self.revisao = banco.conexao.execute("SELECT revisao FROM usr_estado WHERE id=1").fetchone()[0]
+            if str(revisao) != str(self.revisao):
+                raise Conflito("Os dados mudaram. Atualize a tela antes de consultar as faturas.")
+            with criar_cliente(self.config) as cliente:
+                resumo = coletar_faturas(cliente, banco, self.config.regras, hoje=date.today())
+            aplicar_views(banco, raiz_do_projeto() / "sql")
+            self.revisao = banco.conexao.execute(
+                "UPDATE usr_estado SET revisao=revisao+1 WHERE id=1 RETURNING revisao"
+            ).fetchone()[0]
+            resultado = asdict(resumo)
+            try:
+                self.versao = publicar(banco, self.destino).versao
+                self.pendente = False
+            except ErroDePublicacao:
+                self.pendente = True
+                return 202, {**resultado, **self.estado(), "salvo": True, "publicado": False,
+                             "aviso": "Consulta salva; publicação pendente. Use Publicar novamente."}
+            return 200, {**resultado, **self.estado(), "salvo": True, "publicado": True}
 
     def gravar(self, ajuste, revisao, *, republicar=False):
         with self.banco() as banco:
@@ -124,7 +153,65 @@ def criar_servidor(servico: ServicoLocal, porta: int = 8000) -> ThreadingHTTPSer
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "same-origin")
+            if getattr(self, "_aceita_intervalos", False):
+                self.send_header("Accept-Ranges", "bytes")
             super().end_headers()
+
+        def send_head(self):
+            self._intervalo_restante = None
+            self._aceita_intervalos = False
+            caminho = urlsplit(self.path).path
+            if not caminho.lower().endswith(".parquet"):
+                return super().send_head()
+            arquivo = Path(self.translate_path(self.path))
+            if not arquivo.is_file():
+                return super().send_head()
+            self._aceita_intervalos = True
+            faixa = self.headers.get("Range")
+            if not faixa or self.headers.get("If-Range"):
+                return super().send_head()
+
+            with arquivo.open("rb") as fonte:
+                tamanho = os.fstat(fonte.fileno()).st_size
+            partes = re.fullmatch(r"bytes=(\d*)-(\d*)", faixa.strip())
+            inicio = fim = None
+            if partes and (partes[1] or partes[2]) and max(len(partes[1]), len(partes[2])) <= 20 and tamanho:
+                if partes[1]:
+                    inicio = int(partes[1])
+                    fim = min(int(partes[2]), tamanho - 1) if partes[2] else tamanho - 1
+                else:
+                    sufixo = int(partes[2])
+                    if sufixo:
+                        inicio = max(tamanho - sufixo, 0)
+                        fim = tamanho - 1
+            if inicio is None or inicio >= tamanho or fim < inicio:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{tamanho}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
+
+            fonte = arquivo.open("rb")
+            fonte.seek(inicio)
+            self._intervalo_restante = fim - inicio + 1
+            self.send_response(206)
+            self.send_header("Content-Type", self.guess_type(str(arquivo)))
+            self.send_header("Content-Range", f"bytes {inicio}-{fim}/{tamanho}")
+            self.send_header("Content-Length", str(self._intervalo_restante))
+            self.send_header("Last-Modified", self.date_time_string(os.fstat(fonte.fileno()).st_mtime))
+            self.end_headers()
+            return fonte
+
+        def copyfile(self, source, outputfile):
+            restante = self._intervalo_restante
+            if restante is None:
+                return super().copyfile(source, outputfile)
+            while restante:
+                bloco = source.read(min(restante, 64 * 1024))
+                if not bloco:
+                    break
+                outputfile.write(bloco)
+                restante -= len(bloco)
 
         def responder(self, status, dados):
             conteudo = json.dumps(dados, ensure_ascii=False, default=serializar_json).encode("utf-8")
@@ -218,6 +305,9 @@ def criar_servidor(servico: ServicoLocal, porta: int = 8000) -> ThreadingHTTPSer
                 caminho = urlsplit(self.path).path
                 if caminho == "/api/regras/previa" and self.command == "POST":
                     return self.responder(200, servico.previa(dados))
+                if caminho == "/api/faturas/sincronizar" and self.command == "POST":
+                    status, resultado = servico.sincronizar_faturas(self.headers.get("If-Match"))
+                    return self.responder(status, resultado)
                 tipos = {"/api/categorias": "categoria", "/api/regras": "regra"}
                 if caminho in tipos and self.command == "PUT":
                     dados["tipo"] = tipos[caminho]

@@ -97,7 +97,7 @@ def _compra(conexao, ajuste):
         raise ValueError("Informe o valor integral em BRL como decimal textual.") from erro
     if not valor.is_finite() or valor <= 0 or valor >= Decimal("10000000000000000") or valor != valor.quantize(Decimal("0.01")):
         raise ValueError("O valor integral deve ser positivo e ter até duas casas decimais.")
-    if any(not t["e_parcelado"] or t["valor_assinado"] is None or t["valor_assinado"] >= 0 or t["e_pagamento_de_fatura"] or t["e_transferencia_propria"] or t["e_aplicacao"] for t in linhas):
+    if any(not t["e_parcelado"] or t["valor_assinado"] is None or t["valor_assinado"] >= 0 or t["e_pagamento_de_fatura"] or t["e_transferencia_propria"] or t["e_aplicacao"] or t["e_saldo_anterior"] or t["e_pendente_substituida"] for t in linhas):
         raise ValueError("Selecione apenas parcelas de consumo, sem transferências, aplicações ou faturas.")
     if len({(t["id_conta"], t["instituicao"]) for t in linhas}) != 1:
         raise ValueError("Todas as parcelas devem pertencer à mesma conta e instituição.")

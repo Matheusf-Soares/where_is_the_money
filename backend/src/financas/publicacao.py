@@ -15,7 +15,8 @@ registrador = logging.getLogger(__name__)
 TABELAS_PUBLICADAS = (
     "gastos", "stg_transacoes", "recorrencias", "patrimonio", "stg_contas",
     "stg_investimentos", "transacoes_analiticas", "gastos_analiticos", "compras",
-    "recorrencias_analiticas", "qualidade_dados",
+    "recorrencias_analiticas", "qualidade_dados", "faturas", "cobertura_faturas",
+    "lancamentos_fatura_aberta", "faturas_abertas",
 )
 NOME_DO_MANIFESTO = "manifesto.json"
 

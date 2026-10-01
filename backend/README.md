@@ -41,7 +41,8 @@ em Parquet através do DuckDB-WASM. Por isso vale a regra: **as views são
 o contrato público do projeto**.
 
 **Fora de escopo:** nuvem, orçamentos, metas e classificação por IA.
-É um projeto local, single-user; a API local grava apenas personalizações.
+É um projeto local, single-user; a API local grava personalizações e permite
+atualizar as faturas dos cartões já conhecidos.
 
 ---
 
@@ -93,6 +94,7 @@ GET  /accounts?itemId=                         -> contas de um item
 GET  /v2/transactions?accountId=&dateFrom=&after=  -> extrato, por cursor
 GET  /investments?itemId=                      -> posição de investimentos
 GET  /categories                               -> taxonomia (referência)
+GET  /bills?accountId=                          -> faturas oficiais do cartão
 ```
 
 Host: `https://api.pluggy.ai`.
@@ -156,12 +158,16 @@ O fluxo é o de um pipeline ELT clássico, adaptado para rodar na sua máquina:
 
 | View | Grão | Responde |
 |---|---|---|
-| `stg_transacoes` | transação | *por que* essa transação foi excluída — três bandeiras, uma por armadilha |
+| `stg_transacoes` | transação | *por que* essa transação foi excluída — uma bandeira por armadilha |
 | `stg_contas` | conta × dia | retratos, com o mais recente sinalizado |
 | `stg_investimentos` | posição × dia | idem, para investimentos |
 | **`gastos`** | transação | quanto gastei, por mês, categoria, estabelecimento |
 | **`recorrencias`** | assinatura | o que é assinatura ativa e quanto custa por ano |
 | **`patrimonio`** | instituição × dia | como o patrimônio evoluiu |
+| **`faturas`** | fatura × cartão | total oficial e mês de vencimento |
+| **`cobertura_faturas`** | cartão | última coleta de faturas e limitações do detalhe |
+| **`lancamentos_fatura_aberta`** | transação pendente sem fatura | prévia e lançamentos excluídos/ambíguos, com motivo |
+| **`faturas_abertas`** | cartão | subtotal conhecido da prévia, créditos e pagamentos separados |
 
 O staging **marca**, o mart **decide**. Uma transação excluída não desaparece:
 ela continua em `stg_transacoes` com a bandeira que a tirou, então "por que esse
@@ -177,6 +183,89 @@ Duas escolhas em `gastos` que evitam erro recorrente:
 
 O grão é a transação, e não um agregado mensal: agregar depois é trivial, o
 caminho inverso é impossível.
+
+### Datas derivadas antes da publicação
+
+`transacoes_analiticas` mantém `data` como data do lançamento, usada pelos filtros
+existentes. Os campos aditivos `dia_semana` (português) e `dia_semana_iso`
+(1 segunda-feira a 7 domingo) correspondem a essa data. `data_gasto` prefere
+`creditCardMetadata.purchaseDate` válida, senão usa `data`; `origem_data_gasto`
+informa `purchaseDate` ou `data`. `dia_semana_gasto` e `dia_semana_gasto_iso`
+correspondem a `data_gasto`. Datas ausentes continuam nulas.
+
+Em `compras`, todos esses dias correspondem à data final da compra. Compras
+parceladas confirmadas usam a data informada na confirmação e origem
+`compra_confirmada`; compras avulsas preservam a origem da transação.
+Essas transformações acontecem nas views SQL e já seguem prontas nos Parquet,
+sem modificar o JSON bruto nem exigir nova ingestão.
+
+### Fatura em andamento: contrato da prévia parcial
+
+A [referência de transações da Pluggy](https://docs.pluggy.ai/en/reference/transaction/transactions-retrieve)
+define `billForecastDate` como período previsto `YYYY-MM`; ele não é vínculo
+oficial como `billId`. `PENDING` também pode conter parcelas futuras. Por isso
+as duas views novas não usam saldo, limite ou total de compras para inventar
+uma fatura oficial e nunca vinculam uma previsão a uma fatura fechada.
+
+`lancamentos_fatura_aberta` contém somente contas `CREDIT`, transações `PENDING`
+e `billId` ausente/vazio. Expõe todos os campos de `transacoes_analiticas` mais:
+
+| Campo | Significado |
+|---|---|
+| `mes_previsao_fonte` | previsão válida `YYYY-MM`, preservada como informação da fonte, sem assumir vencimento |
+| `ultimo_fechamento`, `ultimo_mes_fechado` | limites observados nas faturas já fechadas |
+| `tipo_operacao_fonte` | `operationType` original |
+| `tipo_lancamento` | `despesa`, `credito`, `pagamento` ou `sem_valor` |
+| `classificacao_periodo` | `andamento`, `futura`, `anterior` ou `sem_associacao` |
+| `incluida_previa` | verdadeiro somente para `andamento` |
+| `previsao_inconsistente` | previsão igual/anterior ao último mês fechado |
+
+A seleção usa a data de lançamento, preservando a separação entre a compra e
+cada parcela: datas futuras ficam fora; datas anteriores ao último fechamento
+ficam em `anterior`. Entre lançamentos recentes, a menor previsão posterior ao
+último mês fechado determina a primeira coorte; previsões posteriores a ela
+ficam em `futura`. Quando falta fechamento, uma previsão válida pode delimitar
+a primeira coorte, mas não cria uma data de fechamento/vencimento.
+
+Lançamentos estritamente posteriores ao fechamento podem entrar como valores
+recentes conhecidos mesmo sem previsão ou com previsão inconsistente. A
+inconsistência permanece explícita: isso não confirma o mês da próxima fatura.
+No próprio dia do fechamento, só uma previsão posterior ao último mês fechado
+resolve o limite; os demais ficam em `sem_associacao`. Sem previsão e sem
+fechamento, ou sem data, não se presume associação.
+
+`faturas_abertas` contém uma linha por cartão, inclusive cartões sem pendências.
+Identificadores: `id_conta`, `instituicao`, `conta`, `numero_cartao`. O campo
+`mes_previsao_fonte` resume a primeira coorte válida incluída; se houver apenas
+previsões inconsistentes, mostra a previsão observada com a respectiva contagem
+de inconsistências. Nenhum desses campos é um mês de vencimento confirmado.
+
+Os valores são `subtotal_despesas_brl`, `subtotal_creditos_brl`, `pagamentos_brl`
+e `liquido_conhecido_brl` (despesas menos créditos). Pagamentos identificados
+pelas regras existentes, por `operationType=PAGAMENTO_FATURA`, ou por
+`operationType=PAGAMENTO` com valor assinado positivo no cartão ficam separados
+e **não reduzem** o líquido do ciclo. `PAGAMENTO` em um débito continua sendo
+despesa; `ESTORNO` em um crédito continua sendo crédito. A classificação usa
+tipo/sinal normalizados, sem depender da descrição ou categoria da fonte.
+Moedas estrangeiras só entram em BRL quando existe
+`amountInAccountCurrency` comprovado numa conta BRL. Sem qualquer valor BRL
+conhecido incluído, os quatro totais são nulos, não uma fatura de zero reais.
+Se apenas pagamentos têm valor BRL conhecido, `pagamentos_brl` conserva esse
+valor, mas despesas, créditos e líquido continuam nulos: um pagamento não
+comprova o valor dos gastos do ciclo.
+
+Contagens: `qtd_lancamentos`, `qtd_despesas`, `qtd_creditos`, `qtd_pagamentos`
+e `qtd_sem_conversao` consideram apenas a prévia incluída. `qtd_futuras`,
+`qtd_anteriores`, `qtd_sem_associacao` e `qtd_previsao_inconsistente` tornam as
+limitações auditáveis. `primeira_data`/`ultima_data` delimitam os lançamentos
+incluídos; `coletado_em` é a última coleta bem-sucedida de transações registrada
+em `log_faturas`, podendo ser nula. `previa_parcial` é sempre verdadeiro.
+Uma atualização de `PENDING` para `POSTED` com `billId` remove o lançamento
+da prévia e o disponibiliza no detalhamento da fatura oficial.
+
+As duas views são publicadas na mesma geração atômica das demais tabelas.
+Sua existência não implica que a origem exponha todos os gastos da fatura
+aberta; a validação contra o aplicativo bancário continua necessária.
 
 ### Por que três camadas e não uma
 
@@ -298,6 +387,9 @@ tabela é o mapa de onde cada uma é resolvida:
 | 7 | **Paginação obrigatória** | Assumir que a página 1 é tudo perde histórico em silêncio | o cliente itera até acabar; há teste para isso |
 | 8 | **`itemId` muda** | Reautorizar gera um item novo para o mesmo banco | chave natural é o `id` da transação |
 | 9 | **Histórico começa ~2025-08** | Antes disso não há o que buscar | `data_inicial` no `regras.toml` |
+| 14 | **Saldo de fatura anterior relançado** | "Saldo em atraso" na fatura seguinte repete compras já contadas | `cfg_padroes_saldo_anterior` → `e_saldo_anterior` |
+| 15 | **Pendente reemitida com id novo** | A pendente antiga continua no raw e conta junto com a lançada | `e_pendente_substituida` em `stg_transacoes` |
+| 16 | **Rendimento não informado** | Ações e FIIs vêm sem valor aplicado; inventar zero afirma algo falso | `rendimento` NULL em `stg_investimentos` |
 
 **Nenhum desses filtros é hardcoded.** As armadilhas 1 e 2 dependem do texto da
 descrição, que varia por instituição — e texto que varia por instituição é
@@ -503,6 +595,7 @@ python -m financas frescor     # alguém parou de trazer dado novo?
 python -m financas categorias  # regra morta e cobertura da categorização
 python -m financas diagnostico # testa a conexão com a Pluggy passo a passo
 python -m financas publicar    # exporta as views em Parquet para o frontend
+python -m financas faturas     # atualiza faturas e transações dos cartões e publica
 python -m financas status      # o que existe no banco
 ```
 
@@ -512,6 +605,37 @@ DuckDB-WASM usa Web Workers e range requests, e os dois exigem origem HTTP.
 
 Flags globais: `--modo online|offline`, `--banco CAMINHO`, `-v` (ou `-vv`).
 `ingerir` aceita `--desde` e `--hoje`; `frescor`, `--hoje`.
+
+### Faturas por mês de vencimento
+
+`ingerir` coleta também as faturas dos cartões. Para atualizar somente esse
+produto e os vínculos dos lançamentos, use `python -m financas faturas`; o
+comando aceita `--hoje` e `--destino`. Abrir `servir` não chama a Pluggy.
+
+O total vem de `totalAmount` da entidade oficial, nunca do saldo do cartão nem
+da soma das compras. A referência mensal é `dueDate`. O total permanece na
+moeda original; somente faturas BRL entram no consolidado em reais. Um total
+oficial não é uma afirmação de saldo restante: os pagamentos documentados pela
+Pluggy correspondem a eventos de ciclos de faturamento e não são subtraídos
+automaticamente.
+
+`raw_faturas` preserva o JSON e usa chave `(id, id_conta)`, com o mesmo upsert
+idempotente das demais tabelas raw. `log_faturas` mantém, por cartão, a última
+tentativa, a última coleta válida e o estado `nao_coletado`, `sucesso`,
+`sem_faturas` ou `falha`. Ausência não representa zero; uma falha preserva a
+coleta anterior e não impede os demais cartões.
+
+O detalhe usa apenas `creditCardMetadata.billId` junto ao ID da conta. A API
+v2 de transações não documenta filtro `billId`, então a coleta específica relê
+o histórico desde a data inicial configurada ou a primeira transação local,
+o que vier antes. A ingestão geral reaproveita os extratos já consultados na
+mesma execução, respeitando `--desde`. A cobertura informa a janela consultada
+e falhas no extrato, pois faturas abertas e alguns conectores podem não trazer
+todos os vínculos. Nenhuma associação é inferida por descrição, valor ou data.
+
+Referências oficiais: [faturas](https://docs.pluggy.ai/en/docs/products/credit-card-bills),
+[listagem](https://docs.pluggy.ai/en/reference/bill/bills-list) e
+[transações v2](https://docs.pluggy.ai/en/reference/transaction/transactions-list-by-cursor).
 
 ### Códigos de saída
 

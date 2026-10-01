@@ -71,8 +71,8 @@ class ErroDeConfiguracao(Exception):
 class PadraoDeDescricao:
     """Padrão que reconhece um tipo de lançamento pela descrição.
 
-    Usado tanto para pagamento de fatura (armadilha 1) quanto para aplicação em
-    investimento (armadilha 3).
+    Usado para pagamento de fatura (armadilha 1), aplicação em investimento
+    (armadilha 3) e saldo de fatura anterior relançado na fatura seguinte.
 
     Os dois campos são padrões LIKE comparados em minúsculas. `instituicao`
     também é padrão, e não igualdade, porque o `connector.name` da API nem
@@ -213,6 +213,7 @@ class Regras:
     grupo_padrao: str = GRUPO_PADRAO
     padroes_fatura: tuple[PadraoDeDescricao, ...] = ()
     padroes_aplicacao: tuple[PadraoDeDescricao, ...] = ()
+    padroes_saldo_anterior: tuple[PadraoDeDescricao, ...] = ()
     contrapartes_proprias: tuple[ContrapartePropria, ...] = ()
     limites_frescor: tuple[LimiteFrescor, ...] = ()
     categorias: tuple[RegraDeCategoria, ...] = ()
@@ -355,6 +356,7 @@ def carregar_regras(caminho: Path) -> Regras:
 
     padroes = _padroes_de_descricao(dados, "pagamento_fatura", caminho, problemas)
     aplicacoes = _padroes_de_descricao(dados, "aplicacao", caminho, problemas)
+    saldos_anteriores = _padroes_de_descricao(dados, "saldo_anterior_fatura", caminho, problemas)
 
     contrapartes: list[ContrapartePropria] = []
     for indice, bruto in enumerate(
@@ -412,6 +414,7 @@ def carregar_regras(caminho: Path) -> Regras:
         grupo_padrao=grupo_padrao,
         padroes_fatura=tuple(padroes),
         padroes_aplicacao=tuple(aplicacoes),
+        padroes_saldo_anterior=tuple(saldos_anteriores),
         contrapartes_proprias=tuple(contrapartes),
         limites_frescor=tuple(limites),
         categorias=tuple(categorias),
@@ -621,8 +624,9 @@ def _padroes_de_descricao(
 ) -> list[PadraoDeDescricao]:
     """Lê uma seção `[[chave]]` no formato instituicao + padrao.
 
-    Serve para `pagamento_fatura` e `aplicacao`, que têm a mesma forma e a mesma
-    função: reconhecer um lançamento pela descrição para tirá-lo dos gastos.
+    Serve para `pagamento_fatura`, `aplicacao` e `saldo_anterior_fatura`, que têm
+    a mesma forma e a mesma função: reconhecer um lançamento pela descrição para
+    tirá-lo dos gastos.
     """
     padroes: list[PadraoDeDescricao] = []
     for indice, bruto in enumerate(_lista_de_tabelas(dados, chave, caminho, problemas)):

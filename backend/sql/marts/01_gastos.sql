@@ -12,6 +12,8 @@
 --   2. Transferência entre contas próprias. Mover dinheiro de um bolso para o
 --      outro não é gasto.
 --   3. Aplicação e resgate. O dinheiro mudou de lugar, não sumiu.
+--   4. Saldo da fatura anterior relançado na seguinte. Já contado.
+--   5. Pendente reemitida com id novo. A lançada é que conta.
 --
 -- Sinal: `valor` aqui é POSITIVO, e vem de `valor_assinado` do staging — não
 -- do `valor` cru.
@@ -58,4 +60,6 @@ WHERE t.valor_assinado < 0
   AND NOT t.e_futura
   AND NOT t.e_pagamento_de_fatura
   AND NOT t.e_transferencia_propria
-  AND NOT t.e_aplicacao;
+  AND NOT t.e_aplicacao
+  AND NOT t.e_saldo_anterior
+  AND NOT t.e_pendente_substituida;

@@ -35,7 +35,7 @@ investimentos AS (
         data_posicao,
         instituicao,
         sum(coalesce(saldo, 0))       AS investido,
-        sum(coalesce(rendimento, 0))  AS rendimento
+        sum(rendimento)               AS rendimento
     FROM stg_investimentos
     GROUP BY data_posicao, instituicao
 )
@@ -46,7 +46,8 @@ SELECT
     coalesce(c.instituicao, i.instituicao)    AS instituicao,
     coalesce(c.saldo_em_conta, 0)             AS saldo_em_conta,
     coalesce(i.investido, 0)                  AS investido,
-    coalesce(i.rendimento, 0)                 AS rendimento,
+    -- Rendimento não informado continua NULL: zero seria afirmar que não rendeu.
+    i.rendimento                              AS rendimento,
     coalesce(c.fatura_em_aberto, 0)           AS fatura_em_aberto,
     coalesce(c.saldo_em_conta, 0)
       + coalesce(i.investido, 0)

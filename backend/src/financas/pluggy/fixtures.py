@@ -12,6 +12,7 @@ Layout esperado do diretório de fixtures:
     ├─ categories.json                   taxonomia (array puro na API real)
     ├─ accounts/<id_item>.json
     ├─ transactions/<id_conta>.json
+    ├─ bills/<id_conta>.json
     └─ investments/<id_item>.json
 
 Cada arquivo aceita tanto o envelope `{"results": [...]}` que a API devolve
@@ -65,6 +66,9 @@ class ClienteFixtures:
 
     def listar_contas(self, id_item: str) -> list[dict[str, Any]]:
         return self._ler(f"accounts/{id_item}.json")
+
+    def listar_faturas(self, id_conta: str) -> list[dict[str, Any]]:
+        return self._ler(f"bills/{id_conta}.json")
 
     def listar_transacoes(
         self, id_conta: str, desde: date

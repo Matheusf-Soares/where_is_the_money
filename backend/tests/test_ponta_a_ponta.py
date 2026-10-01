@@ -94,6 +94,10 @@ class ApiPluggyFalsa:
             arquivo = f"investments/{consulta['itemId']}.json"
             return self._paginar(self._ler(arquivo), consulta)
 
+        if caminho == "/bills":
+            arquivo = f"bills/{consulta['accountId']}.json"
+            return self._paginar(self._ler(arquivo), consulta)
+
         if caminho == "/transactions":
             # A Pluggy aposentou a v1 do extrato. Responder 410 aqui é o que
             # impede o cliente de voltar para ela sem ninguém perceber.

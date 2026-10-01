@@ -120,6 +120,28 @@ observacao = "Coringa: % casa com qualquer instituição."
 
 
 # ---------------------------------------------------------------------------
+# Saldo de fatura anterior relançado na fatura seguinte
+#
+# Quando a fatura não é paga inteira, o cartão lança o saldo restante na
+# fatura seguinte ("Saldo em atraso", "Saldo em rotativo"). As compras desse
+# saldo já entraram no gasto quando aconteceram; contar o saldo de novo dobra o
+# mês. Juros, multa e IOF continuam gasto: são custo novo de verdade. Por isso
+# não há reforço por categoria aqui: a Pluggy põe tudo na mesma categoria.
+# ---------------------------------------------------------------------------
+
+[[saldo_anterior_fatura]]
+instituicao = "nubank"
+padrao = "saldo em atraso%"
+
+[[saldo_anterior_fatura]]
+instituicao = "nubank"
+padrao = "saldo em rotativo%"
+
+[[saldo_anterior_fatura]]
+instituicao = "inter"
+padrao = "rotativo saldo financiado%"
+
+# ---------------------------------------------------------------------------
 # Armadilha 3: aplicação em investimento não é despesa
 #
 # Aporte que sai da conta corrente aparece como débito numa conta BANK, e não

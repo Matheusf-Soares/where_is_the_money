@@ -21,6 +21,7 @@ from datetime import date
 from typing import Any
 
 from financas.config import Regras
+from financas.faturas import coletar_faturas
 from financas.normalizacao import (
     nome_da_instituicao,
     normalizar_conta,
@@ -111,6 +112,7 @@ class ResumoDaIngestao:
     investimentos: ResultadoUpsert
     falhas: tuple[FalhaDeInstituicao, ...] = field(default=())
     degradados: tuple[ItemDegradado, ...] = field(default=())
+    faturas: int = 0
 
     @property
     def houve_falha(self) -> bool:
@@ -126,6 +128,7 @@ class ResumoDaIngestao:
             f"  {self.transacoes}",
             f"  {self.contas_gravadas}",
             f"  {self.investimentos}",
+            f"  {self.faturas} faturas oficiais recebidas",
         ]
 
 
@@ -160,6 +163,7 @@ def ingerir(
     }
     total_de_contas = 0
     estados: dict[str, list[str]] = {}
+    transacoes_atualizadas: dict[str, date] = {}
 
     # O nome configurado vence o do conector; ver `nome_da_instituicao`.
     rotulos = {i.id.lower(): i.instituicao for i in regras.itens}
@@ -207,6 +211,7 @@ def ingerir(
         resultados["raw_contas"].append(banco.gravar_contas(contas))
         resultados["raw_transacoes"].append(banco.gravar_transacoes(transacoes))
         resultados["raw_investimentos"].append(banco.gravar_investimentos(investimentos))
+        transacoes_atualizadas.update({c["id"]: inicio for c in contas})
         estados[instituicao].append("acao_necessaria" if problema else "sucesso")
         registrador.info(
             "%s: %d contas, %d transações, %d investimentos",
@@ -222,6 +227,10 @@ def ingerir(
         estado = "falha" if "falha" in tentativas else "acao_necessaria" if "acao_necessaria" in tentativas else "sucesso"
         _registrar_sincronizacao(banco, instituicao, estado, inicio, hoje)
 
+    faturas = coletar_faturas(cliente, banco, regras, hoje=hoje,
+                               transacoes_atualizadas=transacoes_atualizadas)
+    falhas.extend(FalhaDeInstituicao(f.instituicao, f.motivo) for f in faturas.falhas)
+
     return ResumoDaIngestao(
         itens=len(itens),
         contas=total_de_contas,
@@ -232,6 +241,7 @@ def ingerir(
         ),
         falhas=tuple(falhas),
         degradados=tuple(degradados),
+        faturas=faturas.faturas,
     )
 
 
