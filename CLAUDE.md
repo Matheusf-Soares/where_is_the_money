@@ -28,9 +28,9 @@ categorização e não permitem séries históricas customizadas.
 
 | Fase | O quê | Situação |
 |---|---|---|
-| **1** | Ingestão, persistência, views SQL, testes, CLI | ✅ completa — 325 testes passando |
+| **1** | Ingestão, persistência, views SQL, testes, CLI | ✅ completa — 430 testes passando |
 | **2** | Categorização própria sobre a categoria da Pluggy | em andamento — resolução em 3 camadas pronta |
-| **3** | Frontend consumindo as views | ✅ estático + DuckDB-WASM, 6 abas |
+| **3** | Frontend consumindo as views | ✅ estático + DuckDB-WASM, 9 telas |
 | **4** | *(talvez)* migração para GCP com execução agendada | — |
 
 A fase 1 nunca foi validada contra a API real. Isso é feito por mim, fora deste
@@ -214,7 +214,7 @@ teste de idempotência passaria sem verificar nada.
 
 Uma transação excluída não desaparece: continua em `stg_transacoes` com a
 bandeira que a tirou (`e_pagamento_de_fatura`, `e_transferencia_propria`,
-`e_aplicacao`). "Por que esse gasto sumiu do total?" se responde com um
+`e_aplicacao`, `e_saldo_anterior`, `e_pendente_substituida`). "Por que esse gasto sumiu do total?" se responde com um
 `SELECT`, não caçando um `WHERE`.
 
 ### Filtro não pode ser hardcoded
@@ -253,7 +253,7 @@ introduza um `if modo ==` em nenhum outro módulo.
 
 ## 7. As armadilhas do domínio
 
-Já custaram tempo. São requisitos, não sugestões. As de 10 a 13 só apareceram na primeira ingestão real, em 17/09/2026 — as nove primeiras foram previstas, estas foram descobertas com dado de verdade na mão.
+Já custaram tempo. São requisitos, não sugestões. As de 10 a 13 só apareceram na primeira ingestão real, em 17/09/2026 — as nove primeiras foram previstas, estas foram descobertas com dado de verdade na mão. As de 14 a 16 saíram da auditoria dos valores das telas contra o dado real, em 01/10/2026.
 
 | # | Armadilha | Onde é tratada |
 |---|---|---|
@@ -270,6 +270,9 @@ Já custaram tempo. São requisitos, não sugestões. As de 10 a 13 só aparecer
 | 11 | **Parcela futura vem junto** — a API devolve as parcelas que ainda não venceram, com data à frente e `status=PENDING` | `e_futura` → fora de `gastos` e do `frescor` |
 | 12 | **O conector MeuPluggy é agregador** — `connector.name` devolve "MeuPluggy" para todos os items, então instituição não dá para inferir | `instituicao` obrigatório em `[[item]]` |
 | 13 | **Listar items é bloqueado por design** — `GET /items` responde 401 para todo cliente da Pluggy | `[[item]]` no `regras.toml` + `GET /items/{id}` |
+| 14 | **Saldo de fatura anterior relançado** — "Saldo em atraso"/"Saldo em rotativo" na fatura seguinte repetem compras já contadas, e nos dados reais isso dobrou o gasto de cinco meses | `[[saldo_anterior_fatura]]` → `cfg_padroes_saldo_anterior` → `e_saldo_anterior`; juros e multa continuam gasto |
+| 15 | **Pendente reemitida com id novo** — ao lançar, a Pluggy cria outra transação e a pendente antiga fica no raw | `e_pendente_substituida` em `stg_transacoes` (mesma conta, valor, ±3 dias, mesmo texto ou ambos pagamento de fatura) |
+| 16 | **Rendimento e valor aplicado não vêm para ações/FIIs** — usar `amount` como aplicado fazia rendimento sempre 0 | `valor_aplicado` só de `amountOriginal`; sem ele, rendimento fica NULL ("Não informado") |
 
 **A Pluggy classifica nativamente as armadilhas 1, 2 e 3** — as categorias
 `Credit card payment`, `Same person transfer` e `Investments`. `cfg_categorias_ruido`
@@ -299,7 +302,7 @@ pip install -e ".[dev]"                             # OBRIGATÓRIO, veja abaixo
 cp env.example .env                                 # preencha as credenciais
 cp config/regras.example.toml config/regras.toml    # preencha suas chaves Pix
 
-python -m pytest                                    # 325 testes, sem rede
+python -m pytest                                    # 430 testes, sem rede
 ```
 
 ⚠️ **O `pip install -e .` não é opcional.** Sem ele, `python -m financas`
@@ -418,7 +421,7 @@ permissões são limitadas por padrão.
   o que fez antes de seguir.
 - **Se uma decisão de modelagem tiver mais de um caminho razoável**, apresente
   as opções com o trade-off em vez de escolher sozinho.
-- **Rode `python -m pytest` antes de dizer que terminou.** 325 testes, ~35s,
+- **Rode `python -m pytest` antes de dizer que terminou.** 430 testes, ~100s,
   sem rede.
 - Antes de escrever código, leia [`backend/README.md`](backend/README.md): ele
   explica o *porquê* de cada decisão listada na seção 6.

@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-01T00:00:00Z",
+  "title": "Design System: Onde foi parar?",
+  "extensions": {
+    "colorMeta": {
+      "graphite-base": { "role": "neutral", "displayName": "Graphite Base", "canonical": "#0c0d10", "cssVar": "--bg", "tonalRamp": ["#0c0d10", "#14161a", "#1a1c21", "#212429", "#2e3138", "#3b3f47", "#7f8590", "#eceef1"] },
+      "graphite-lateral": { "role": "neutral", "displayName": "Graphite Lateral", "canonical": "#0f1013", "cssVar": "--bg-lateral" },
+      "graphite-surface": { "role": "neutral", "displayName": "Graphite Surface", "canonical": "#14161a", "cssVar": "--superficie", "tonalRamp": ["#0c0d10", "#14161a", "#1a1c21", "#212429", "#2e3138", "#3b3f47", "#7f8590", "#eceef1"] },
+      "graphite-raised": { "role": "neutral", "displayName": "Graphite Raised", "canonical": "#1a1c21", "cssVar": "--superficie-2" },
+      "graphite-raised-high": { "role": "neutral", "displayName": "Graphite Raised High", "canonical": "#212429", "cssVar": "--superficie-3" },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "#23262c", "cssVar": "--linha" },
+      "hairline-strong": { "role": "neutral", "displayName": "Hairline Strong", "canonical": "#2e3138", "cssVar": "--linha-2" },
+      "hairline-max": { "role": "neutral", "displayName": "Hairline Max", "canonical": "#3b3f47", "cssVar": "--linha-3" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#eceef1", "cssVar": "--texto", "tonalRamp": ["#20252c", "#363e49", "#4c5767", "#616f84", "#7f8590", "#a6abb5", "#cad0d8", "#eceef1"] },
+      "ink-secondary": { "role": "neutral", "displayName": "Ink Secondary", "canonical": "#a6abb5", "cssVar": "--texto-2" },
+      "ink-tertiary": { "role": "neutral", "displayName": "Ink Tertiary", "canonical": "#7f8590", "cssVar": "--texto-3" },
+      "action-blue": { "role": "primary", "displayName": "Action Blue", "canonical": "#6e9fff", "cssVar": "--acento", "tonalRamp": ["#001a4c", "#002b80", "#003cb2", "#004ee6", "#2971ff", "#6e9fff", "#a3c2ff", "#e0ebff"] },
+      "action-blue-strong": { "role": "primary", "displayName": "Action Blue Strong", "canonical": "#8fb5ff", "cssVar": "--acento-forte" },
+      "action-blue-wash": { "role": "primary", "displayName": "Action Blue Wash", "canonical": "rgba(110,159,255,.13)", "cssVar": "--acento-suave" },
+      "action-blue-line": { "role": "primary", "displayName": "Action Blue Line", "canonical": "rgba(110,159,255,.38)", "cssVar": "--acento-linha" },
+      "action-ink": { "role": "primary", "displayName": "Action Ink", "canonical": "#08132b", "cssVar": "--acento-tinta" },
+      "credit-green": { "role": "secondary", "displayName": "Credit Green", "canonical": "#4cc790", "cssVar": "--positivo", "tonalRamp": ["#123a28", "#1e6143", "#2b885e", "#37af79", "#4cc790", "#8adbb7", "#b9e9d4", "#e8f8f1"] },
+      "credit-green-wash": { "role": "secondary", "displayName": "Credit Green Wash", "canonical": "rgba(76,199,144,.12)", "cssVar": "--positivo-suave" },
+      "spend-coral": { "role": "secondary", "displayName": "Spend Coral", "canonical": "#f2786d", "cssVar": "--negativo", "tonalRamp": ["#460c06", "#75130a", "#a41b0f", "#d32313", "#ed493a", "#f2786d", "#f7b1ab", "#fce5e3"] },
+      "spend-coral-wash": { "role": "secondary", "displayName": "Spend Coral Wash", "canonical": "rgba(242,120,109,.12)", "cssVar": "--negativo-suave" },
+      "partial-amber": { "role": "tertiary", "displayName": "Partial Amber", "canonical": "#e8b65a", "cssVar": "--alerta", "tonalRamp": ["#432f09", "#704e10", "#9d6d16", "#c98c1c", "#e8b65a", "#ecc479", "#f4dbae", "#fbf3e4"] },
+      "partial-amber-wash": { "role": "tertiary", "displayName": "Partial Amber Wash", "canonical": "rgba(232,182,90,.1)", "cssVar": "--alerta-suave" },
+      "partial-amber-line": { "role": "tertiary", "displayName": "Partial Amber Line", "canonical": "rgba(232,182,90,.32)", "cssVar": "--alerta-linha" },
+      "help-lilac": { "role": "help", "displayName": "Help Lilac", "canonical": "#c6b8ff", "cssVar": "--ajuda", "tonalRamp": ["#0f004c", "#190080", "#2300b2", "#2d00e6", "#5329ff", "#8466ff", "#c6b8ff", "#e6e0ff"] },
+      "help-ink": { "role": "help", "displayName": "Help Ink", "canonical": "#1d1740", "cssVar": "--ajuda-tinta" },
+      "help-ground": { "role": "help", "displayName": "Help Ground", "canonical": "#121219", "cssVar": "--ajuda-fundo" },
+      "help-line": { "role": "help", "displayName": "Help Line", "canonical": "#2a2840", "cssVar": "--ajuda-linha" },
+      "help-wash": { "role": "help", "displayName": "Help Wash", "canonical": "#1e1b33", "cssVar": "--ajuda-suave" },
+      "help-text": { "role": "help", "displayName": "Help Text", "canonical": "#dcd8ec", "cssVar": "--ajuda-texto" },
+      "help-muted": { "role": "help", "displayName": "Help Muted", "canonical": "#a19bbd", "cssVar": "--ajuda-apagado" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "cssVar": "--fs-9", "purpose": "The single net-worth figure on Patrimônio." },
+      "headline": { "displayName": "Headline", "cssVar": "--fs-8", "purpose": "KPI values in the metric strip and the drawer amount." },
+      "title-page": { "displayName": "Page Title", "cssVar": "--fs-7", "purpose": "Screen h1 in the topbar; invoice totals." },
+      "title": { "displayName": "Title", "cssVar": "--fs-4", "purpose": "Panel and drawer headings." },
+      "body": { "displayName": "Body", "cssVar": "--fs-3", "purpose": "Tables, paragraphs and controls." },
+      "label": { "displayName": "Label", "cssVar": "--fs-2", "purpose": "Buttons, chips, metric labels, notices, sub lines." },
+      "caption": { "displayName": "Caption", "cssVar": "--fs-1", "purpose": "Column headers, pills, axes, metadata. Sentence case." },
+      "mono": { "displayName": "Mono", "cssVar": "--mono", "purpose": "SQL editor, schema list, identifiers and raw-field values." },
+      "help-reading": { "displayName": "Help Reading", "cssVar": "--ajuda-serifa", "purpose": "Reading text inside the help layer only." },
+      "scale": { "displayName": "Fixed nine-step scale", "purpose": "--fs-1..--fs-9 = 12/13/14/16/18/20/24/28/34px; supersedes the contract's earlier 1.125 wording." }
+    },
+    "fonts": [
+      { "family": "Geist Variable", "source": "https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5.3.0/index.css" },
+      { "family": "Geist Mono Variable", "source": "https://cdn.jsdelivr.net/npm/@fontsource-variable/geist-mono@5.3.0/index.css" }
+    ],
+    "shadows": [
+      { "name": "float", "value": "0 12px 32px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3)", "purpose": "Toast (--sombra)." },
+      { "name": "drawer-edge", "value": "-24px 0 60px rgba(0,0,0,.5)", "purpose": "Transaction-detail drawer, over a rgba(5,6,8,.62) backdrop." },
+      { "name": "help-edge", "value": "-24px 0 48px rgba(0,0,0,.45)", "purpose": "Help panel in overlay mode; removed in push mode." },
+      { "name": "segment-lift", "value": "0 1px 2px rgba(0,0,0,.35)", "purpose": "Checked option of the segmented control." },
+      { "name": "focus-halo", "value": "0 0 0 3px rgba(110,159,255,.13)", "purpose": "Focused inputs and focus-within chips." }
+    ],
+    "motion": [
+      { "name": "curve", "value": "cubic-bezier(.2,.8,.2,1)", "purpose": "Drawer entrance (--curva)." },
+      { "name": "help-curve", "value": "cubic-bezier(.2,.7,.2,1)", "purpose": "Help panel and pins (--ajuda-curva)." },
+      { "name": "state", "value": "150ms", "purpose": "Colour and border transitions on controls." },
+      { "name": "drawer", "value": "260ms", "purpose": "Drawer slide-in from 32px and help-panel slide." },
+      { "name": "skeleton", "value": "1.4s ease-in-out infinite", "purpose": "Skeleton shimmer between surface and raised." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: reduce", "purpose": "All animations and transitions disabled." }
+    ],
+    "breakpoints": [
+      { "name": "help-push-narrow", "value": "1799px" },
+      { "name": "help-push", "value": "1440px" },
+      { "name": "tablet", "value": "1180px" },
+      { "name": "invoices-stack", "value": "900px" },
+      { "name": "mobile", "value": "760px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "One primary action per panel, in the panel header.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Classificar seleção</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 13px;border:1px solid var(--linha-2,#2e3138);border-radius:8px;background:var(--superficie-2,#1a1c21);color:var(--texto,#eceef1);font:500 13px/1.3 'Geist Variable',system-ui,sans-serif;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s}.ds-btn:focus-visible{outline:2px solid var(--acento,#6e9fff);outline-offset:2px}.ds-btn-primary{background:var(--acento,#6e9fff);border-color:var(--acento,#6e9fff);color:var(--acento-tinta,#08132b);font-weight:600}.ds-btn-primary:hover{background:var(--acento-forte,#8fb5ff);border-color:var(--acento-forte,#8fb5ff)}"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Secondary actions on graphite.",
+      "html": "<button class=\"ds-btn-default\">Exportar CSV</button>",
+      "css": ".ds-btn-default{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 13px;border:1px solid var(--linha-2,#2e3138);border-radius:8px;background:var(--superficie-2,#1a1c21);color:var(--texto,#eceef1);font:500 13px/1.3 'Geist Variable',system-ui,sans-serif;cursor:pointer;transition:background-color .15s,border-color .15s}.ds-btn-default:hover{background:var(--superficie-3,#212429);border-color:var(--linha-3,#3b3f47)}.ds-btn-default:active{background:var(--linha-2,#2e3138)}.ds-btn-default:focus-visible{outline:2px solid var(--acento,#6e9fff);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Low-emphasis actions such as the sidebar reload.",
+      "html": "<button class=\"ds-btn-ghost\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20.5 12a8.5 8.5 0 0 1-14.8 5.7L3.5 15.5\"/><path d=\"M3.5 20.5v-5h5\"/><path d=\"M3.5 12a8.5 8.5 0 0 1 14.8-5.7l2.2 2.2\"/><path d=\"M20.5 3.5v5h-5\"/></svg>Atualizar dados</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 13px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--texto-2,#a6abb5);font:500 13px/1.3 'Geist Variable',system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s}.ds-btn-ghost:hover{background:var(--superficie-2,#1a1c21);color:var(--texto,#eceef1)}.ds-btn-ghost:focus-visible{outline:2px solid var(--acento,#6e9fff);outline-offset:2px}"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Each shared filter is a chip with its label inside.",
+      "html": "<label class=\"ds-chip\">Banco<select><option>Todos os bancos</option></select></label>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;height:34px;padding-left:11px;border:1px solid var(--linha-2,#2e3138);border-radius:8px;background:var(--superficie,#14161a);color:var(--texto-3,#7f8590);font:13px 'Geist Variable',system-ui,sans-serif;transition:border-color .15s}.ds-chip:hover{border-color:var(--linha-3,#3b3f47)}.ds-chip:focus-within{border-color:var(--acento-linha,rgba(110,159,255,.38));box-shadow:0 0 0 3px var(--acento-suave,rgba(110,159,255,.13))}.ds-chip select{height:32px;padding:0 10px 0 7px;border:0;background:transparent;color:var(--texto,#eceef1);font:500 13px 'Geist Variable',system-ui,sans-serif;outline:none}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "36px field on surface with blue focus halo.",
+      "html": "<input class=\"ds-input\" placeholder=\"Buscar estabelecimento\">",
+      "css": ".ds-input{height:36px;padding:0 11px;border:1px solid var(--linha-2,#2e3138);border-radius:8px;background:var(--superficie,#14161a);color:var(--texto,#eceef1);font:14px 'Geist Variable',system-ui,sans-serif;transition:border-color .15s}.ds-input::placeholder{color:var(--texto-3,#7f8590)}.ds-input:hover{border-color:var(--linha-3,#3b3f47)}.ds-input:focus{outline:none;border-color:var(--acento-linha,rgba(110,159,255,.38));box-shadow:0 0 0 3px var(--acento-suave,rgba(110,159,255,.13))}"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Grouped nav with SVG icons; active item lifts and its icon turns blue; amber counts mean pending review.",
+      "html": "<nav class=\"ds-nav\"><div class=\"ds-nav-grupo\">Análise</div><button class=\"ds-nav-item ds-active\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m20 20-4.4-4.4\"/></svg>Explorar gastos</button><button class=\"ds-nav-item\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m3.5 6.5 1.75 1.75L8.5 5M3.5 12.5l1.75 1.75L8.5 11M3.5 18.5l1.75 1.75L8.5 17M12.5 6.5h8M12.5 12.5h8M12.5 18.5h8\"/></svg>Revisão<span class=\"ds-nav-contagem\">3</span></button></nav>",
+      "css": ".ds-nav{display:flex;flex-direction:column;gap:2px;width:216px;padding:14px;background:var(--bg-lateral,#0f1013)}.ds-nav-grupo{margin:0 10px 6px;font:500 12px 'Geist Variable',system-ui,sans-serif;color:var(--texto-3,#7f8590)}.ds-nav-item{display:flex;align-items:center;gap:11px;min-height:36px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--texto-2,#a6abb5);font:500 14px 'Geist Variable',system-ui,sans-serif;text-align:left;cursor:pointer;transition:background-color .15s,color .15s}.ds-nav-item svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}.ds-nav-item:hover{background:var(--superficie-2,#1a1c21);color:var(--texto,#eceef1)}.ds-nav-item:focus-visible{outline:2px solid var(--acento,#6e9fff);outline-offset:2px}.ds-active{background:var(--superficie-3,#212429);color:var(--texto,#eceef1)}.ds-active svg{color:var(--acento,#6e9fff)}.ds-nav-contagem{margin-left:auto;min-width:22px;height:20px;padding:0 7px;border-radius:999px;background:var(--alerta-suave,rgba(232,182,90,.1));color:var(--alerta,#e8b65a);font-size:12px;font-weight:600;line-height:20px;text-align:center;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "KPI Strip",
+      "kind": "card",
+      "refersTo": "metric",
+      "description": "Joined metric cells; quiet currency and cents; clickable value; coral/green deltas with SVG arrows.",
+      "html": "<div class=\"ds-cards\"><article class=\"ds-metric\"><span class=\"ds-label\">Gasto no mês</span><strong><span class=\"ds-moeda\">R$</span>4.218<span class=\"ds-centavos\">,40</span></strong><small><span class=\"ds-delta ds-sobe\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 19V5M6 11l6-6 6 6\"/></svg>12%</span> sobre a média</small></article><article class=\"ds-metric\"><span class=\"ds-label\">Recorrências ativas</span><strong><span class=\"ds-moeda\">R$</span>389<span class=\"ds-centavos\">,70</span></strong><small><span class=\"ds-delta ds-desce\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5v14M6 13l6 6 6-6\"/></svg>4%</span> desde o mês anterior</small></article></div>",
+      "css": ".ds-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1px;overflow:hidden;border:1px solid var(--linha,#23262c);border-radius:12px;background:var(--linha,#23262c);font-family:'Geist Variable',system-ui,sans-serif}.ds-metric{padding:16px 20px 18px;background:var(--superficie,#14161a);color:var(--texto,#eceef1)}.ds-label{display:block;margin-bottom:8px;font-size:13px;font-weight:500;color:var(--texto-2,#a6abb5)}.ds-metric strong{display:block;font-size:28px;font-weight:600;letter-spacing:-.025em;line-height:1.2;font-variant-numeric:tabular-nums}.ds-moeda,.ds-centavos{font-size:.6em;font-weight:500;color:var(--texto-2,#a6abb5);letter-spacing:0}.ds-moeda{margin-right:.2em}.ds-metric small{display:block;margin-top:8px;font-size:13px;color:var(--texto-3,#7f8590)}.ds-delta{display:inline-flex;align-items:center;gap:4px;font-weight:500;font-variant-numeric:tabular-nums}.ds-delta svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.ds-sobe{color:var(--negativo,#f2786d)}.ds-desce{color:var(--positivo,#4cc790)}"
+    },
+    {
+      "name": "Hairline Table with Total",
+      "kind": "custom",
+      "refersTo": "table-total-row",
+      "description": "Sortable hairline table; SVG chevrons light blue on the sorted column; totals separated by an 18px gap on a raised band.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Estabelecimento</th><th class=\"ds-num\" aria-sort=\"descending\"><span class=\"ds-sort\">Valor<svg viewBox=\"0 0 12 12\" aria-hidden=\"true\"><path class=\"ds-cima\" d=\"M3.5 5 6 2.5 8.5 5\"/><path class=\"ds-baixo\" d=\"M3.5 7 6 9.5 8.5 7\"/></svg></span></th></tr></thead><tbody><tr><td>Mercado Exemplo</td><td class=\"ds-num\">R$ 312,90</td></tr><tr><td>Padaria Fulano</td><td class=\"ds-num\">R$ 48,00</td></tr></tbody><tfoot><tr class=\"ds-gap\"><td colspan=\"2\"></td></tr><tr class=\"ds-total\"><td>Total do recorte</td><td class=\"ds-num\">R$ 360,90</td></tr></tfoot></table>",
+      "css": ".ds-table{width:100%;border-collapse:collapse;font:14px/1.45 'Geist Variable',system-ui,sans-serif;color:var(--texto,#eceef1)}.ds-table th{padding:9px 12px;border-bottom:1px solid var(--linha,#23262c);font-size:12px;font-weight:500;color:var(--texto-3,#7f8590);text-align:left}.ds-table td{padding:11px 12px;border-bottom:1px solid var(--linha,#23262c)}.ds-table tbody tr:last-child td{border-bottom:0}.ds-table tbody tr:hover{background:rgba(255,255,255,.022)}.ds-num{text-align:right!important;font-variant-numeric:tabular-nums;white-space:nowrap}.ds-sort{display:inline-flex;align-items:center;gap:6px}.ds-sort svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}th[aria-sort]{color:var(--texto,#eceef1)!important}th[aria-sort] .ds-sort svg{color:var(--acento,#6e9fff)}th[aria-sort=descending] .ds-cima{opacity:0}.ds-gap td{height:18px;padding:0!important;border:0!important}.ds-total td{padding:12px;border:0;background:var(--superficie-2,#1a1c21);font-weight:600}.ds-total td:first-child{border-radius:8px 0 0 8px}.ds-total td:last-child{border-radius:0 8px 8px 0}"
+    },
+    {
+      "name": "Heat Strip",
+      "kind": "custom",
+      "description": "Twelve clickable month cells; blue intensity by value; hatched when data is missing; current month underlined in blue.",
+      "html": "<div class=\"ds-heat-strip\"><button class=\"ds-heat\" style=\"--i:.15\" aria-label=\"Jan\"></button><button class=\"ds-heat ds-vazio\" aria-label=\"Fev, sem dados\"></button><button class=\"ds-heat\" style=\"--i:.35\" aria-label=\"Mar\"></button><button class=\"ds-heat\" style=\"--i:.6\" aria-label=\"Abr\"></button><button class=\"ds-heat\" style=\"--i:.25\" aria-label=\"Mai\"></button><button class=\"ds-heat ds-atual\" style=\"--i:.45\" aria-label=\"Jun\"></button></div>",
+      "css": ".ds-heat-strip{display:grid;grid-template-columns:repeat(6,minmax(14px,1fr));gap:3px;width:200px}.ds-heat{min-height:26px;padding:0;border:0;border-radius:6px;background:rgba(110,159,255,var(--i,.04));cursor:pointer}.ds-heat:hover{outline:1px solid rgba(110,159,255,.38)}.ds-heat:focus-visible{outline:2px solid var(--acento,#6e9fff);outline-offset:2px}.ds-vazio{background:repeating-linear-gradient(135deg,var(--superficie-3,#212429) 0 2px,transparent 2px 5px)}.ds-atual{box-shadow:inset 0 -2px 0 var(--acento,#6e9fff)}"
+    },
+    {
+      "name": "Pills",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Status pills: each colour on its own wash, semantics reserved.",
+      "html": "<span class=\"ds-pill\">Assinatura</span> <span class=\"ds-pill ds-pill-pos\">Estorno</span> <span class=\"ds-pill ds-pill-neg\">Falha</span> <span class=\"ds-pill ds-pill-alerta\">Parcial</span> <span class=\"ds-pill ds-pill-acento\">Selecionado</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:var(--superficie-3,#212429);color:var(--texto-2,#a6abb5);font:500 12px/22px 'Geist Variable',system-ui,sans-serif}.ds-pill-pos{background:var(--positivo-suave,rgba(76,199,144,.12));color:var(--positivo,#4cc790)}.ds-pill-neg{background:var(--negativo-suave,rgba(242,120,109,.12));color:var(--negativo,#f2786d)}.ds-pill-alerta{background:var(--alerta-suave,rgba(232,182,90,.1));color:var(--alerta,#e8b65a)}.ds-pill-acento{background:var(--acento-suave,rgba(110,159,255,.13));color:var(--acento-forte,#8fb5ff)}"
+    },
+    {
+      "name": "Help Button",
+      "kind": "button",
+      "refersTo": "help-button",
+      "description": "Lilac circle in the topbar that opens the help layer; the only lilac outside the panel.",
+      "html": "<button class=\"ds-ajuda-fab\" aria-label=\"Ajuda desta tela\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9.1 9.25a2.95 2.95 0 1 1 4.2 2.65c-.85.45-1.3 1.05-1.3 2.05v.5\"/><circle cx=\"12\" cy=\"17.9\" r=\"1.2\"/></svg></button>",
+      "css": ".ds-ajuda-fab{display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--ajuda,#c6b8ff);color:var(--ajuda-tinta,#1d1740);cursor:pointer;transition:background-color .15s}.ds-ajuda-fab:hover{background:#d9cfff}.ds-ajuda-fab:focus-visible{outline:2px solid var(--ajuda,#c6b8ff);outline-offset:3px}.ds-ajuda-fab svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round}.ds-ajuda-fab svg circle{fill:currentColor;stroke:none}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Ledger",
+    "overview": "The financial dashboard of the category, chosen on purpose and executed to the Mercury bar: cold graphite in three layers, one-pixel hairlines, a single action blue, and numbers set in Geist with tabular figures. Nothing is smuggled in to look different. The distinction is in the finish: money values that de-emphasise the currency and the cents, a true minus sign, sort chevrons drawn in SVG, totals separated from the rows they sum, and every aggregate clickable down to the transaction that composes it.\n\nDensity follows the data. KPI strips and panels breathe; tables are tight hairline grids. Each screen leads with its answer (a number or an ordered list), then what changed or still needs checking, then the transaction-grain table. Colour carries meaning, never decoration: blue is action and the primary series, green and coral are money direction, amber is only \"this data is incomplete\". The help layer lives in its own lilac world so explanation is never mistaken for data.\n\nDark-only and Portuguese are product commitments, not states to be completed later. Rejected on purpose: the old quilt of mint-bordered cards, uppercase eyebrow labels, and Unicode glyphs standing in for icons.",
+    "keyCharacteristics": [
+      "Three graphite layers plus a slightly lifted sidebar; depth by tone and 1px hairlines, not shadows.",
+      "One action blue for selection, links, focus and the primary data series.",
+      "Semantic colour is reserved: green = decrease/credit, coral = spend increase/error, amber = partial data or pending review.",
+      "Geist + Geist Mono, tabular numerals everywhere numbers align, fixed nine-step scale.",
+      "Single-stroke 24×24 SVG icons inheriting text colour.",
+      "Detail opens in a right-side drawer; filters are chips; help is a separate lilac layer."
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Action Blue is the only interactive and primary-series hue. A second accent never appears; a second series uses a lighter tint of the same blue.", "section": "colors" },
+      { "name": "The Reserved Semantics Rule", "body": "Green and coral mean money direction (and coral also means error); amber means only partial or pending data. A rising spend delta is coral, never amber. None of them is used for decoration or identity.", "section": "colors" },
+      { "name": "The Identity Hue Rule", "body": "Bank and merchant avatars take a stable hue from the name, constrained to 190–300° (blues and violets), at 30% saturation/21% lightness for the disc and 70%/80% for the initials, so identity never borrows green or red semantics.", "section": "colors" },
+      { "name": "The Separate Voice Rule", "body": "Lilac belongs to the help layer alone and never mixes with data colours; data colours never appear inside help chrome.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Every number that can sit above another number uses tabular numerals (`font-variant-numeric: tabular-nums`) and right alignment in tables.", "section": "typography" },
+      { "name": "The Quiet Currency Rule", "body": "Large money values set \"R$\" and the cents at 0.6em, weight 500, in Ink Secondary, so the integer reads first; negatives use a true minus sign (U+2212), never a hyphen.", "section": "typography" },
+      { "name": "The Fixed Scale Rule", "body": "Sizes come only from the nine `--fs-*` steps; no ad-hoc pixel sizes.", "section": "typography" },
+      { "name": "The Flat-At-Rest Rule", "body": "Surfaces that sit in the page are separated by tone and hairline, never by shadow; shadow is reserved for overlays.", "section": "elevation" }
+    ],
+    "dos": [
+      "**Do** lead each screen with its answer (KPI strip or ordered list), then change or pending checks, then the transaction table.",
+      "**Do** make every aggregate (metric, bar, column, heat cell) open the transactions that compose it.",
+      "**Do** use Action Blue for every interactive accent and the primary series; tint it lighter for a second series.",
+      "**Do** set money with de-emphasised \"R$\" and cents, a true minus sign and tabular numerals.",
+      "**Do** draw missing or partial data explicitly: hatched cells, amber notices, \"parcial\" in the total label.",
+      "**Do** use the single-stroke SVG icon set (24×24, 1.75 stroke, currentColor) at 16px.",
+      "**Do** separate table totals from the body with the 18px gap and the Graphite Raised band.",
+      "**Do** keep 44px targets on touch and honour reduced motion."
+    ],
+    "donts": [
+      "**Don't** use amber for spending increases; it is reserved for partial data and pending review.",
+      "**Don't** give a bank or merchant a green or red identity colour.",
+      "**Don't** let lilac or the help serif leak into data surfaces, or data colours into the help layer.",
+      "**Don't** return to bordered mint cards, uppercase eyebrow labels above titles, or Unicode glyphs as icons.",
+      "**Don't** add shadows to panels or the KPI strip.",
+      "**Don't** open detail in a centred modal; use the side drawer.",
+      "**Don't** add a light theme or non-Portuguese copy.",
+      "**Don't** show real financial data in any design artefact or capture."
+    ]
+  }
+}

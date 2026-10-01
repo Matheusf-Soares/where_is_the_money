@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "frontend/index.html"
+        ],
+        "createdAt": "2026-10-01T21:27:05.327Z",
+        "reason": "Claude (sessão de redesign): o achado vem do estilo de <kbd> (borda inferior de 2px desenha a tecla física), não de cartão com acento"
+      }
+    ]
+  }
+}
